@@ -1,24 +1,29 @@
 @import "tailwindcss";
+@import "driver.js/dist/driver.css";
 
-/* Design tokens — Notion's clarity, skinned in PennyLane's palette. */
+/* Design tokens — Notion aesthetic: white, near-black ink, thin gray hairlines. */
 @theme {
-  --color-cream: #f8f4f1;      /* warm page background (PennyLane) */
+  --color-bg: #ffffff;         /* page background */
   --color-surface: #ffffff;    /* card surface */
-  --color-ink: #003d3d;        /* deep teal — primary text & headers */
-  --color-ink-soft: #3f6360;   /* secondary text */
-  --color-muted: #8a9b98;      /* tertiary / captions */
-  --color-line: #e7e1db;       /* warm hairline border */
-  --color-line-soft: #f0ebe6;
-  --color-brand: #00f872;      /* vivid green — emergence / active accent */
-  --color-brand-deep: #00b85a;
-  --color-brand-ink: #024d2a;  /* readable text on brand green */
-  --color-mint: #dafbf2;       /* light card tint */
-  --color-mint2: #d9efeb;
-  --color-teal: #42ad9a;
-  --color-gold: #ffc063;       /* pending / attention */
-  --color-gold-tint: #fff3dd;
-  --color-sky: #4a90c2;
-  --color-sky-tint: #e7f1f8;
+  --color-subtle: #f7f7f5;     /* secondary fill / hover / inset */
+  --color-ink: #37352f;        /* primary text & headers */
+  --color-ink-soft: #787066;   /* secondary text */
+  --color-muted: #9b9a97;      /* tertiary / captions */
+  --color-line: #e9e9e7;       /* hairline border */
+  --color-line-soft: #f1f0ee;
+  --color-accent: #2383e2;     /* Notion blue — active / link / primary */
+  --color-accent-deep: #0b6bcb;
+  --color-accent-soft: #e7f1fb;/* accent tint fill */
+
+  /* Memory levels — desaturated, Notion-pill flavored (kept distinguishable). */
+  --color-lvl-personal: #5b8fb9;
+  --color-lvl-personal-bg: #eef4f9;
+  --color-lvl-team: #6a8f6a;
+  --color-lvl-team-bg: #eef3ee;
+  --color-lvl-project: #8a6db0;
+  --color-lvl-project-bg: #f2eef8;
+  --color-lvl-org: #b08a3a;
+  --color-lvl-org-bg: #f7f1e4;
 }
 
 :root {
@@ -27,28 +32,80 @@
 
 html,
 body {
-  background: var(--color-cream);
+  background: var(--color-bg);
   color: var(--color-ink);
-  font-family: -apple-system, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: #b8ffd8;
-  color: var(--color-brand-ink);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-deep);
 }
 
-/* Emergence animation — the "it's born" moment, in PennyLane green. */
+/* Emergence animation — the "it's born" moment, restrained Notion-blue pulse. */
 @keyframes emerge {
-  0% { transform: scale(0.96); opacity: 0; box-shadow: 0 0 0 0 rgba(0, 248, 114, 0.55); }
-  60% { transform: scale(1.01); opacity: 1; box-shadow: 0 0 0 10px rgba(0, 248, 114, 0); }
+  0% { transform: scale(0.98); opacity: 0; box-shadow: 0 0 0 0 rgba(35, 131, 226, 0.35); }
+  60% { transform: scale(1.005); opacity: 1; box-shadow: 0 0 0 8px rgba(35, 131, 226, 0); }
   100% { transform: scale(1); opacity: 1; }
 }
 .animate-emerge {
-  animation: emerge 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: emerge 800ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Notion-style thin scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d6cfc8 transparent;
+  scrollbar-color: #d9d8d4 transparent;
+}
+
+/* ---- driver.js: restyled to the Notion look ---- */
+.driver-popover.weave-tour {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15, 15, 15, 0.12);
+  font-family: inherit;
+}
+.driver-popover.weave-tour .driver-popover-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+.driver-popover.weave-tour .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-ink-soft);
+}
+.driver-popover.weave-tour .driver-popover-progress-text {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.driver-popover.weave-tour .driver-popover-navigation-btns button {
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  text-shadow: none;
+}
+.driver-popover.weave-tour .driver-popover-navigation-btns button:hover {
+  background: var(--color-accent-deep);
+}
+.driver-popover.weave-tour .driver-popover-prev-btn {
+  background: var(--color-subtle) !important;
+  color: var(--color-ink-soft) !important;
+}
+.driver-popover.weave-tour .driver-popover-close-btn {
+  color: var(--color-muted);
+}
+.driver-popover.weave-tour .driver-popover-arrow {
+  border-color: var(--color-surface);
+}
+/* softer backdrop than driver.js default black */
+.driver-overlay {
+  opacity: 1 !important;
 }

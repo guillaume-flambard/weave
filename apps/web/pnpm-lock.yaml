@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      driver.js:
+        specifier: ^1.6.0
+        version: 1.6.0
+      lucide-react:
+        specifier: ^1.23.0
+        version: 1.23.0(react@19.2.7)
       next:
         specifier: ^15.1.6
         version: 15.5.19(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -365,6 +371,9 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
+  driver.js@1.6.0:
+    resolution: {integrity: sha512-gryo9QS7AZhz8J0bmdf42dwaTzcd1BgSJLnaSM7cPJbu8bTW8wIEuiGDy4MoCvB4Sr8wA9g5o2G9EFNVYZGeVQ==}
+
   enhanced-resolve@5.21.6:
     resolution: {integrity: sha512-aNnGCvbJ/RIyWo1IuhNdVjnNF+EjH9wpzpNHt+ci/m9He9LJvUN8wrCcXjp9cWsGNAuvSpVFTx/vraAFQ8qGjQ==}
     engines: {node: '>=10.13.0'}
@@ -445,6 +454,11 @@ packages:
   lightningcss@1.32.0:
     resolution: {integrity: sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==}
     engines: {node: '>= 12.0.0'}
+
+  lucide-react@1.23.0:
+    resolution: {integrity: sha512-38BpJcD0JhFosxHApP/BYsBetLpQFRoTRzEzstM/XCc3jsAG7wqaY1lgVwxiUe3xqYE+lNxo2PkCmYwXWrwwIw==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -786,6 +800,8 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
+  driver.js@1.6.0: {}
+
   enhanced-resolve@5.21.6:
     dependencies:
       graceful-fs: 4.2.11
@@ -843,6 +859,10 @@ snapshots:
       lightningcss-linux-x64-musl: 1.32.0
       lightningcss-win32-arm64-msvc: 1.32.0
       lightningcss-win32-x64-msvc: 1.32.0
+
+  lucide-react@1.23.0(react@19.2.7):
+    dependencies:
+      react: 19.2.7
 
   magic-string@0.30.21:
     dependencies:
