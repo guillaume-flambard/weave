@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Design tokens — Notion's clarity, skinned in PennyLane's palette. */
+@theme {
+  --color-cream: #f8f4f1;      /* warm page background (PennyLane) */
+  --color-surface: #ffffff;    /* card surface */
+  --color-ink: #003d3d;        /* deep teal — primary text & headers */
+  --color-ink-soft: #3f6360;   /* secondary text */
+  --color-muted: #8a9b98;      /* tertiary / captions */
+  --color-line: #e7e1db;       /* warm hairline border */
+  --color-line-soft: #f0ebe6;
+  --color-brand: #00f872;      /* vivid green — emergence / active accent */
+  --color-brand-deep: #00b85a;
+  --color-brand-ink: #024d2a;  /* readable text on brand green */
+  --color-mint: #dafbf2;       /* light card tint */
+  --color-mint2: #d9efeb;
+  --color-teal: #42ad9a;
+  --color-gold: #ffc063;       /* pending / attention */
+  --color-gold-tint: #fff3dd;
+  --color-sky: #4a90c2;
+  --color-sky-tint: #e7f1f8;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: -apple-system, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+}
+
+::selection {
+  background: #b8ffd8;
+  color: var(--color-brand-ink);
+}
+
+/* Emergence animation — the "it's born" moment, in PennyLane green. */
+@keyframes emerge {
+  0% { transform: scale(0.96); opacity: 0; box-shadow: 0 0 0 0 rgba(0, 248, 114, 0.55); }
+  60% { transform: scale(1.01); opacity: 1; box-shadow: 0 0 0 10px rgba(0, 248, 114, 0); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-emerge {
+  animation: emerge 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Notion-style thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d6cfc8 transparent;
+}

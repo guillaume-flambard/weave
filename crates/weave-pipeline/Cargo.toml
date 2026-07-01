@@ -1,0 +1,17 @@
+[package]
+name = "weave-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+weave-core.workspace = true
+weave-store.workspace = true
+weave-llm.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

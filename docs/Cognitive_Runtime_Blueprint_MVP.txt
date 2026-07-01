@@ -1,0 +1,83 @@
+Cognitive Runtime Blueprint (MVP)
+
+Vision
+
+Build a Cognitive Runtime: a shared organizational memory layer that
+sits above LLMs and below business tools. The runtime continuously
+transforms conversations, documents and actions into structured
+knowledge.
+
+Core Principles
+
+-   Event-sourced architecture
+-   Shared memory independent from any single agent
+-   Facts over transcripts
+-   Knowledge graph + vectors + search
+-   Auto-generated skills from recurring patterns
+-   Model/provider agnostic
+
+High-Level Architecture
+
+Sources: - Notion - Slack - GitHub - Linear - Google Drive - Gmail -
+Discord - Meetings
+
+↓ Connectors
+
+↓ Event Bus (NATS JetStream)
+
+↓ Processing Workers 1. Classifier 2. Entity Extractor 3. Fact Extractor
+4. Relationship Extractor 5. Summarizer 6. Pattern Detector 7. Memory
+Updater
+
+↓ Storage - PostgreSQL (business data) - MinIO/S3 (files) - Qdrant
+(vectors) - Kuzu (knowledge graph) - Tantivy (BM25 search)
+
+↓ API Layer Rust + Axum REST MCP WebSocket SSE
+
+↓ Frontend Next.js React Tailwind shadcn/ui TanStack Query TanStack
+Table
+
+Event Model
+
+Each event contains: - id - source - timestamp - actor - project -
+type - payload - confidence
+
+Events are immutable.
+
+Memory Pipeline
+
+Incoming Event → Deduplicate → Extract entities → Extract facts → Link
+graph → Generate embeddings → Detect contradictions → Update summaries →
+Discover patterns → Version memory
+
+Memory Levels
+
+Personal Team Project Organization
+
+Pattern Discovery
+
+Repeated workflows become reusable Skills automatically.
+
+Example: Question repeated → Same answer → Same documentation →
+Auto-generated Skill
+
+Recommended Stack
+
+Language: Rust Framework: Axum Messaging: NATS JetStream SQL: PostgreSQL
+Objects: MinIO Vectors: Qdrant Graph: Kuzu Search: Tantivy
+Observability: - OpenTelemetry - Prometheus - Grafana
+
+LLM Gateway
+
+Abstract providers: - OpenAI - Anthropic - Gemini - Mistral - Ollama -
+DeepSeek
+
+Embedding Gateway
+
+Provider abstraction: - Voyage - BGE - Jina - OpenAI
+
+Differentiator
+
+The platform does not retrieve documents only. It continuously converts
+organizational activity into: Documents → Events → Facts → Entities →
+Relationships → Decisions → Patterns → Living Organizational Memory

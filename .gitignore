@@ -1,0 +1,24 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Node / Next
+node_modules/
+apps/web/.next/
+apps/web/next-env.d.ts
+.pnpm-store/
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs
+*.log

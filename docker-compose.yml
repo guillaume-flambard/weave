@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: weave-postgres
+    environment:
+      POSTGRES_USER: weave
+      POSTGRES_PASSWORD: weave
+      POSTGRES_DB: weave
+    ports:
+      - "5433:5432"
+    volumes:
+      - weave_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weave -d weave"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  weave_pgdata:
