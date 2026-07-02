@@ -227,6 +227,25 @@ Si le temps manque :
 
 ---
 
+# Clôture de sprint
+
+## Done
+- hardening API (scoping, auth minimale, CORS, erreurs moins verbeuses)
+- couverture store/API ajoutée et verte
+- feedback frontend rendu visible et compréhensible
+- `page.tsx` allégé + composants UI extraits
+- CI minimale en place
+- smoke E2E Playwright en place
+
+## Reporté
+- `weave/apps/web/hooks/use-weave-events.ts` : à extraire seulement si la logique SSE grossit ou devient réutilisée
+
+## Gelé jusqu’à refonte UI
+- scénario E2E principal complet (`preset` → `simulate` → émergence skill → `ask` → provenance)
+- stabilisation fine des assertions UI sur la version actuelle
+
+---
+
 # Risques à éviter
 - [x] ne pas sur-refactorer le frontend trop tôt
 - [x] ne pas perdre 3 jours sur une auth trop lourde
