@@ -106,13 +106,13 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ## Semaine 2 — Frontend structure + validation + CI
 
 ### Jour 6 — Extraire le data layer frontend
-- [ ] Créer `weave/apps/web/lib/api.ts`
-- [ ] Créer `weave/apps/web/lib/types.ts`
-- [ ] Créer `weave/apps/web/hooks/use-weave-dashboard.ts`
+- [x] Créer `weave/apps/web/lib/api.ts`
+- [x] Créer `weave/apps/web/lib/types.ts`
+- [x] Créer `weave/apps/web/hooks/use-weave-dashboard.ts`
 - [ ] Créer `weave/apps/web/hooks/use-weave-events.ts` si utile
-- [ ] Déplacer les appels `fetch` dans `api.ts`
-- [ ] Déplacer les types locaux hors de `page.tsx`
-- [ ] Réduire significativement la taille de `page.tsx`
+- [x] Déplacer les appels `fetch` dans `api.ts`
+- [x] Déplacer les types locaux hors de `page.tsx`
+- [x] Réduire significativement la taille de `page.tsx`
 - [ ] Vérifier que le comportement reste identique
 
 **Done when:**
@@ -137,16 +137,16 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 8 — Ajouter un test E2E du flow principal
-- [ ] Installer/configurer Playwright
+- [x] Installer/configurer Playwright
 - [ ] Écrire un scénario principal :
-  - [ ] ouvrir l’app
+  - [x] ouvrir l’app
   - [ ] charger preset
   - [ ] simuler l’activité
   - [ ] attendre une skill émergée
   - [ ] poser une question
   - [ ] vérifier réponse + provenance
-- [ ] Ajouter éventuellement un smoke test secondaire
-- [ ] Documenter comment lancer les E2E
+- [x] Ajouter éventuellement un smoke test secondaire
+- [x] Documenter comment lancer les E2E
 
 **Done when:**
 - le flow principal de la démo est validé automatiquement
@@ -154,11 +154,11 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 9 — Ajouter une CI minimale
-- [ ] Ajouter workflow CI
-- [ ] Lancer `cargo check`
-- [ ] Lancer `cargo test`
-- [ ] Lancer build frontend
-- [ ] Ajouter tests API/intégration si possible
+- [x] Ajouter workflow CI
+- [x] Lancer `cargo check`
+- [x] Lancer `cargo test`
+- [x] Lancer build frontend
+- [x] Ajouter tests API/intégration si possible
 - [ ] Ajouter smoke E2E si l’environnement le permet
 - [ ] Vérifier qu’un échec bloque bien la pipeline
 
@@ -212,12 +212,14 @@ Si le temps manque :
 ## Frontend
 - [ ] plus de `catch {}` silencieux sur le flow principal
 - [ ] feedback d’erreur visible
-- [ ] `page.tsx` nettement allégé
-- [ ] composants/hooks extraits
+- [x] `page.tsx` nettement allégé
+- [x] composants/hooks extraits
 
 ## Validation
 - [ ] flow E2E principal passe
+- [x] smoke E2E configuré
 - [ ] CI minimale verte
+- [x] workflow CI minimal ajouté
 
 ## Produit
 - [ ] démo toujours fluide

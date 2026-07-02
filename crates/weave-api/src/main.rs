@@ -711,7 +711,11 @@ mod tests {
             Arc::new(StubEmbedder),
             5,
         ));
-        Some(build_app(AppState { runtime, store }))
+        Some(build_app(AppState {
+            runtime,
+            store,
+            api_key: None,
+        }))
     }
 
     async fn json_body(response: axum::response::Response) -> Value {
