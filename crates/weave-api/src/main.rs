@@ -152,10 +152,15 @@ fn project_of(q: &ProjectQ) -> String {
 }
 
 /// Kick off a live replay of the seed stream in the background.
-async fn replay(State(state): State<AppState>) -> Json<Value> {
+async fn replay(
+    State(state): State<AppState>,
+    Query(q): Query<ProjectQ>,
+) -> Json<Value> {
+    let project = project_of(&q);
     let runtime = state.runtime.clone();
     tokio::spawn(async move {
-        for event in seed_events() {
+        for mut event in seed_events() {
+            event.project = project.clone();
             if let Err(e) = runtime.ingest(&event).await {
                 tracing::error!("ingest failed: {e}");
             }
@@ -163,7 +168,7 @@ async fn replay(State(state): State<AppState>) -> Json<Value> {
         }
         tracing::info!("replay complete");
     });
-    Json(json!({ "status": "replaying" }))
+    Json(json!({ "status": "replaying", "project": project_of(&q) }))
 }
 
 // --- Sandbox: bring-your-own-org ---
@@ -294,7 +299,10 @@ async fn inject(
 /// Pull a Slack channel (read-only) and ingest it through the same pipeline.
 /// Configured via SLACK_BOT_TOKEN + SLACK_CHANNEL. This is the Phase 0 "real on a
 /// wire" path: same emergence, but on real messages.
-async fn ingest_slack(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn ingest_slack(
+    State(state): State<AppState>,
+    Query(q): Query<ProjectQ>,
+) -> Result<Json<Value>, AppError> {
     let token = std::env::var("SLACK_BOT_TOKEN").ok().filter(|t| !t.trim().is_empty());
     let channel = std::env::var("SLACK_CHANNEL").ok().filter(|c| !c.trim().is_empty());
     let (Some(token), Some(channel)) = (token, channel) else {
@@ -304,7 +312,8 @@ async fn ingest_slack(State(state): State<AppState>) -> Result<Json<Value>, AppE
         })));
     };
 
-    let connector = SlackConnector::new(token, channel, DEFAULT_PROJECT);
+    let project = project_of(&q);
+    let connector = SlackConnector::new(token, channel, &project);
     let events = connector.poll().await?; // surface auth/permission errors now
     let n = events.len();
     let runtime = state.runtime.clone();
@@ -316,14 +325,18 @@ async fn ingest_slack(State(state): State<AppState>) -> Result<Json<Value>, AppE
         }
         tracing::info!("slack ingest complete ({n} events)");
     });
-    Ok(Json(json!({ "status": "ingesting", "source": "slack", "events": n })))
+    Ok(Json(json!({ "status": "ingesting", "source": "slack", "events": n, "project": project })))
 }
 
-/// Wipe the demo project so a replay can be rehearsed from scratch.
-async fn reset(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    state.store.reset(DEFAULT_PROJECT).await?;
-    state.runtime.seed_predefined_agents(DEFAULT_PROJECT).await?;
-    Ok(Json(json!({ "status": "reset" })))
+/// Wipe one project so a replay can be rehearsed from scratch.
+async fn reset(
+    State(state): State<AppState>,
+    Query(q): Query<ProjectQ>,
+) -> Result<Json<Value>, AppError> {
+    let project = project_of(&q);
+    state.store.reset(&project).await?;
+    state.runtime.seed_predefined_agents(&project).await?;
+    Ok(Json(json!({ "status": "reset", "project": project })))
 }
 
 /// SSE live feed of pipeline events.
@@ -410,6 +423,7 @@ async fn get_agents(
 
 #[derive(Deserialize)]
 struct ApproveReq {
+    project: Option<String>,
     name: String,
 }
 
@@ -420,11 +434,12 @@ async fn approve_agent(
 ) -> Result<Json<Value>, AppError> {
     use weave_core::AgentStatus;
     use weave_store::AgentStore;
+    let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
     state
         .store
-        .set_agent_status(DEFAULT_PROJECT, &req.name, AgentStatus::Active)
+        .set_agent_status(&project, &req.name, AgentStatus::Active)
         .await?;
-    Ok(Json(json!({ "status": "active", "name": req.name })))
+    Ok(Json(json!({ "status": "active", "name": req.name, "project": project })))
 }
 
 #[derive(Deserialize)]
