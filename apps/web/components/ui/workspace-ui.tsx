@@ -7,8 +7,8 @@ import { Badge } from "./primitives";
 
 const LEVEL_LABEL: Record<string, string> = { personal: "Personal", team: "Team", project: "Project", organization: "Organization" };
 
-export function Panel({ title, icon, count, subtitle, bodyStyle, children }:
-  { title: string; icon?: ReactNode; count?: number; subtitle?: string; bodyStyle?: CSSProperties; children: ReactNode }) {
+export function Panel({ title, icon, count, subtitle, actions, bodyStyle, children }:
+  { title: string; icon?: ReactNode; count?: number; subtitle?: string; actions?: ReactNode; bodyStyle?: CSSProperties; children: ReactNode }) {
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, background: "var(--surface)", display: "flex", flexDirection: "column", minWidth: 0 }}>
       <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line-soft)" }}>
@@ -18,6 +18,7 @@ export function Panel({ title, icon, count, subtitle, bodyStyle, children }:
           {count !== undefined && (
             <span style={{ fontSize: 11, color: "var(--muted)", background: "var(--subtle)", borderRadius: 999, padding: "1px 8px", fontVariantNumeric: "tabular-nums" }}>{count}</span>
           )}
+          {actions}
         </div>
         {subtitle && <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}>{subtitle}</p>}
       </div>
