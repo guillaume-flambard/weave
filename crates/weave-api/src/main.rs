@@ -91,7 +91,16 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { runtime, store };
 
-    let app = Router::new()
+    let app = build_app(state);
+
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("Weave API listening on http://{addr}");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+fn build_app(state: AppState) -> Router {
+    Router::new()
         .route("/health", get(health))
         .route("/replay", post(replay))
         .route("/ingest/slack", post(ingest_slack))
@@ -117,12 +126,7 @@ async fn main() -> anyhow::Result<()> {
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("Weave API listening on http://{addr}");
-    axum::serve(listener, app).await?;
-    Ok(())
+        .with_state(state)
 }
 
 fn llm_model() -> String {
@@ -544,5 +548,245 @@ impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         tracing::error!("request error: {:#}", self.0);
         (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use serde_json::Value;
+    use sqlx::postgres::PgPoolOptions;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use tower::util::ServiceExt;
+    use weave_core::{Agent, AgentStatus, MemoryLevel};
+    use weave_llm::{EmbeddingGateway, Extraction, LlmGateway};
+    use weave_store::{AgentStore, PgStore};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+    #[derive(Default)]
+    struct StubLlm;
+
+    #[async_trait::async_trait]
+    impl LlmGateway for StubLlm {
+        async fn extract(&self, _event: &weave_core::Event) -> anyhow::Result<Extraction> {
+            Ok(Extraction::default())
+        }
+
+        async fn synthesize_skill(
+            &self,
+            _signature: &str,
+            _question: &str,
+            _answers: &[String],
+        ) -> anyhow::Result<String> {
+            Ok("stub skill".into())
+        }
+
+        async fn answer(&self, question: &str, _context: &str) -> anyhow::Result<String> {
+            Ok(format!("stub answer: {question}"))
+        }
+
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+    }
+
+    #[derive(Default)]
+    struct StubEmbedder;
+
+    #[async_trait::async_trait]
+    impl EmbeddingGateway for StubEmbedder {
+        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+            Ok(vec![0.0; weave_core::EMBEDDING_DIM])
+        }
+    }
+
+    fn unique_project(prefix: &str) -> String {
+        format!("{prefix}-{}", TEST_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    async fn test_app() -> Option<Router> {
+        let url = std::env::var("TEST_DATABASE_URL").ok()?;
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.ok()?;
+        let store = Arc::new(PgStore::from_pool(pool));
+        store.migrate().await.ok()?;
+        let runtime = Arc::new(Runtime::new(
+            store.clone(),
+            Arc::new(StubLlm),
+            Arc::new(StubEmbedder),
+            5,
+        ));
+        Some(build_app(AppState { runtime, store }))
+    }
+
+    async fn json_body(response: axum::response::Response) -> Value {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        serde_json::from_slice(&bytes).expect("body should be json")
+    }
+
+    fn sample_agent(project: &str, name: &str) -> Agent {
+        Agent {
+            id: uuid::Uuid::new_v4(),
+            project: project.into(),
+            team: "ops".into(),
+            name: name.into(),
+            role: "Tu aides l'équipe ops.".into(),
+            domain: "finance-ops".into(),
+            skills: vec![],
+            scope: MemoryLevel::Team,
+            status: AgentStatus::Pending,
+            derived_from: "test".into(),
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn health_returns_ok() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let response = app
+            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["llm"], "stub");
+    }
+
+    #[tokio::test]
+    async fn reset_is_scoped_to_requested_project() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let project = unique_project("api-reset");
+        let other_project = unique_project("api-reset-other");
+
+        let inject_a = Request::builder()
+            .method("POST")
+            .uri("/inject")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"project": project, "text": "question A"}).to_string(),
+            ))
+            .unwrap();
+        let inject_b = Request::builder()
+            .method("POST")
+            .uri("/inject")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"project": other_project, "text": "question B"}).to_string(),
+            ))
+            .unwrap();
+        app.clone().oneshot(inject_a).await.unwrap();
+        app.clone().oneshot(inject_b).await.unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/reset?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["project"], project);
+
+        let stats_a = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/stats?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let stats_b = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/stats?project={other_project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(json_body(stats_a).await["events"], 0);
+        assert_eq!(json_body(stats_b).await["events"], 1);
+    }
+
+    #[tokio::test]
+    async fn approve_agent_only_updates_requested_project() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let store = PgStore::from_pool(pool);
+        store.migrate().await.unwrap();
+
+        let project = unique_project("api-agent");
+        let other_project = unique_project("api-agent-other");
+        let name = "specialiste-ops-finance-ops";
+        store.insert_agent(&sample_agent(&project, name)).await.unwrap();
+        store
+            .insert_agent(&sample_agent(&other_project, name))
+            .await
+            .unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/approve")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"project": project, "name": name}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let agents_a = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/agents?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let agents_b = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/agents?project={other_project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(json_body(agents_a).await[0]["status"], "active");
+        assert_eq!(json_body(agents_b).await[0]["status"], "pending");
     }
 }

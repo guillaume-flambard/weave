@@ -27,3 +27,8 @@ chrono.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+sqlx.workspace = true
+async-trait.workspace = true
