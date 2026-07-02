@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Brain, Sparkles, Bot, MessageSquare, Building2, Circle, CircleDot, HelpCircle } from "lucide-react";
+import { askMemory, approveAgent as approveAgentRequest, API, getAgents, getFacts, getHealth, getOrgConfig, getPresets, getSkills, injectMessage, loadOrg, resetProject, simulateOrg } from "../lib/api";
+import type { Agent, Answer, Fact, Feed, OrgCfg, Skill, TeamCfg, Project } from "../lib/types";
 import { useGuidedTour } from "./tour";
-
-const API = process.env.NEXT_PUBLIC_WEAVE_API || "http://127.0.0.1:8787";
 
 // mirror weave_core::OrgConfig::slug
 function slug(name: string): string {
@@ -14,25 +14,7 @@ function slug(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-// --- Types ---
-type Feed = {
-  type: string;
-  source?: string; actor?: string; text?: string;
-  ftype?: string; author?: string; topic?: string; content?: string; memory_level?: string;
-  name?: string; sources_count?: number; skills?: string[]; domain?: string;
-  signature?: string; occurrences?: number; threshold?: number;
-  src?: string; dst?: string; rel?: string;
-};
-type Skill = { id: string; name: string; team: string; workstream: string; trigger: string; body: string; referents: string[]; sources: string[]; memory_level: string };
-type Fact = { id: string; ftype: string; author: string; team: string; workstream: string; topic: string; content: string; memory_level: string };
-type Layer = { level: string; facts: { content: string; author: string; ftype: string }[] };
-type Answer = { answer: string; skill_used: string | null; layers: Layer[] };
-type Agent = { id: string; name: string; team: string; role: string; domain: string; skills: string[]; status: string; derived_from: string };
-type TraceStep = { agent: string; action: string; note: string; depth: number };
-type AgentRun = { answer: string; trace: TraceStep[] };
-type Project = { name: string; theme: string; domain: string };
-type TeamCfg = { name: string; members: string[]; projects: Project[] };
-type OrgCfg = { org: string; name: string; teams: TeamCfg[] };
+
 
 const LEVEL_STYLE: Record<string, string> = {
   personal: "text-lvl-personal border-lvl-personal/30 bg-lvl-personal-bg",
@@ -69,22 +51,22 @@ export default function Page() {
   const refetch = useCallback(async (id: string) => {
     try {
       const [s, f, ag] = await Promise.all([
-        fetch(`${API}/skills?project=${id}`).then((r) => r.json()),
-        fetch(`${API}/facts?project=${id}`).then((r) => r.json()),
-        fetch(`${API}/agents?project=${id}`).then((r) => r.json()),
+        getSkills(id),
+        getFacts(id),
+        getAgents(id),
       ]);
       setSkills(s); setFacts(f); setAgents(ag);
     } catch {}
   }, []);
 
   const loadOrgConfig = useCallback(async (id: string) => {
-    const cfg = await fetch(`${API}/org?project=${id}`).then((r) => r.json());
+    const cfg = await getOrgConfig(id);
     setOrg(cfg);
   }, []);
 
   useEffect(() => {
-    fetch(`${API}/health`).then((r) => r.json()).then((d) => setLlm(d.llm || "")).catch(() => {});
-    fetch(`${API}/org/presets`).then((r) => r.json()).then(setPresets).catch(() => {});
+    getHealth().then((d) => setLlm(d.llm || "")).catch(() => {});
+    getPresets().then(setPresets).catch(() => {});
   }, []);
 
   const throttle = useRef(0);
@@ -118,7 +100,7 @@ export default function Page() {
   }, [orgId, refetch, loadOrgConfig]);
 
   const switchOrg = async (id: string) => {
-    await fetch(`${API}/org/load`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ org: id }) });
+    await loadOrg(id);
     setFeed([]); setSkills([]); setFacts([]); setAgents([]); setAnswer(null); setScope({}); setNewest(null);
     setOrgId(id);
     loadOrgConfig(id);
@@ -126,10 +108,10 @@ export default function Page() {
   };
 
   const simulate = async () => {
-    await fetch(`${API}/simulate`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: orgId }) });
+    await simulateOrg(orgId);
   };
   const reset = async () => {
-    await fetch(`${API}/reset`, { method: "POST" });
+    await resetProject(orgId);
     setFeed([]); setAnswer(null); setNewest(null);
     setTimeout(() => refetch(orgId), 300);
   };
@@ -137,18 +119,17 @@ export default function Page() {
   const ask = async () => {
     setAsking(true); setAnswer(null);
     try {
-      const res = await fetch(`${API}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: orgId, question }) }).then((r) => r.json());
+      const res = await askMemory(orgId, question);
       setAnswer(res);
     } finally { setAsking(false); }
   };
   const approveAgent = async (name: string) => {
-    await fetch(`${API}/agents/approve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+    await approveAgentRequest(orgId, name);
     setTimeout(() => refetch(orgId), 200);
   };
   const inject = async () => {
     if (!injectText.trim()) return;
-    await fetch(`${API}/inject`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ project: orgId, team: scope.team || "", workstream: scope.workstream || "", text: injectText, actor: "vous" }) });
+    await injectMessage(orgId, scope.team || "", scope.workstream || "", injectText, "vous");
     setInjectText("");
     setTimeout(() => refetch(orgId), 300);
   };
@@ -162,9 +143,9 @@ export default function Page() {
   const fAgents = agents.filter((a) => !scope.team || a.team === scope.team || a.team === "");
 
   const scopeLabel = scope.workstream
-    ? org?.teams.flatMap((t) => t.projects).find((p) => slug(p.name) === scope.workstream)?.name
+    ? org?.teams.flatMap((t: TeamCfg) => t.projects).find((p: Project) => slug(p.name) === scope.workstream)?.name
     : scope.team
-    ? org?.teams.find((t) => slug(t.name) === scope.team)?.name
+    ? org?.teams.find((t: TeamCfg) => slug(t.name) === scope.team)?.name
     : "Toute l'organisation";
 
   return (
@@ -210,7 +191,7 @@ export default function Page() {
           className={`rounded-full px-2.5 py-1 text-xs ${!scope.team ? "bg-ink text-white" : "border border-line bg-surface text-ink-soft hover:bg-subtle"}`}>
           Organisation
         </button>
-        {org?.teams.map((t) => {
+        {org?.teams.map((t: TeamCfg) => {
           const ts = slug(t.name);
           const active = scope.team === ts && !scope.workstream;
           return (
@@ -219,7 +200,7 @@ export default function Page() {
                 className={`rounded-full px-2.5 py-1 text-xs ${active ? "bg-accent text-white" : "border border-line bg-surface text-ink-soft hover:bg-subtle"}`}>
                 {t.name}
               </button>
-              {scope.team === ts && t.projects.map((p) => {
+              {scope.team === ts && t.projects.map((p: Project) => {
                 const ws = slug(p.name);
                 return (
                   <button key={p.name} onClick={() => setScope({ team: ts, workstream: ws })}
@@ -306,7 +287,7 @@ export default function Page() {
                 <div className="mt-0.5 text-[11px] text-muted">{a.derived_from}</div>
                 {a.skills.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
-                    {a.skills.map((s) => <span key={s} className="rounded bg-subtle px-1.5 py-0.5 text-[10px] text-ink-soft">✦ {s.split("/").pop()}</span>)}
+                    {a.skills.map((s: string) => <span key={s} className="rounded bg-subtle px-1.5 py-0.5 text-[10px] text-ink-soft">✦ {s.split("/").pop()}</span>)}
                   </div>
                 )}
               </div>
@@ -354,7 +335,7 @@ export default function Page() {
                   <div key={l.level} className={`rounded-md border p-2 ${LEVEL_STYLE[l.level] || "border-line"}`}>
                     <div className="text-xs font-semibold capitalize">{l.level}</div>
                     <ul className="mt-1 space-y-0.5">
-                      {l.facts.slice(0, 4).map((f, i) => <li key={i} className="text-[11px] text-ink-soft"><span className="opacity-70">{f.author} :</span> {f.content}</li>)}
+                      {l.facts.slice(0, 4).map((f: { content: string; author: string; ftype: string }, i: number) => <li key={i} className="text-[11px] text-ink-soft"><span className="opacity-70">{f.author} :</span> {f.content}</li>)}
                     </ul>
                   </div>
                 ))}
@@ -386,7 +367,7 @@ function SkillCard({ s, newest, org }: { s: Skill; newest: string | null; org?: 
       <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-line bg-surface p-2 text-[11px] leading-relaxed text-ink-soft">{s.body}</pre>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
         <span>référents :</span>
-        {s.referents.map((r) => <span key={r} className="rounded bg-white px-1.5 py-0.5 text-ink-soft">{r}</span>)}
+        {s.referents.map((r: string) => <span key={r} className="rounded bg-white px-1.5 py-0.5 text-ink-soft">{r}</span>)}
         <span className="ml-auto">{s.sources.length} sources</span>
       </div>
     </div>
