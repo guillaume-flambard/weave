@@ -59,6 +59,8 @@ export DATABASE_URL="postgres://weave:weave@localhost:5433/weave"
 export WEAVE_LLM_PROVIDER=ollama            # défaut
 export WEAVE_OLLAMA_MODEL="qwen3.5:9b"      # un modèle que tu as en local
 # export ANTHROPIC_API_KEY=sk-ant-...       # pour provider=claude
+# export WEAVE_API_KEY="dev-secret"        # active une auth simple via Bearer/X-API-Key
+# export WEAVE_CORS_ORIGIN="http://127.0.0.1:3200"
 cargo run -p weave-api
 
 # 3. Dashboard
@@ -71,19 +73,36 @@ Puis, dans le dashboard : **Reset** → **Rejouer l'activité** → regarde la s
 
 ## API
 
+### Auth & CORS (durcissement minimal)
+
+L'API supporte désormais un mode de protection léger pour les environnements non purement locaux.
+
+- `WEAVE_API_KEY` : si défini, les routes mutatives et sensibles exigent soit
+  `Authorization: Bearer <clé>`, soit `X-API-Key: <clé>`.
+- `WEAVE_CORS_ORIGIN` : origine autorisée côté navigateur (défaut : `http://127.0.0.1:3200`).
+- `WEAVE_CORS_ALLOW_ANY=true` : désactive la restriction CORS (démo locale uniquement).
+
+Exemple :
+
+```bash
+curl -X POST "http://127.0.0.1:8787/reset?project=pennylane" \
+  -H "Authorization: Bearer dev-secret"
+```
+
+
 | Méthode | Route      | Rôle                                            |
 |---------|------------|-------------------------------------------------|
-| POST    | `/replay`  | rejoue le dataset seed (live)                   |
-| POST    | `/ingest/slack` | ingère un canal Slack réel (lecture seule) |
+| POST    | `/replay?project=...`  | rejoue le dataset seed (live) scoped par projet |
+| POST    | `/ingest/slack?project=...` | ingère un canal Slack réel (lecture seule) |
 | GET     | `/stats`   | compteurs (events, faits, skills, agents)       |
-| POST    | `/reset`   | vide le projet (répétable)                      |
+| POST    | `/reset?project=...`   | vide le projet ciblé (répétable)                |
 | GET     | `/events`  | flux SSE des événements pipeline                |
 | GET     | `/facts`   | faits récents                                   |
 | GET     | `/skills`  | skills émergées                                 |
 | GET     | `/graph`   | entités + relations                             |
 | POST    | `/ask`     | réponse agent + provenance des couches          |
 | GET     | `/agents`  | agents prédéfinis + émergents                   |
-| POST    | `/agents/approve` | active un agent émergent (gouvernance)   |
+| POST    | `/agents/approve` | active un agent émergent (gouvernance, scoped par `project`) |
 | POST    | `/agents/run`     | orchestration plan→délègue→vérifie + trace|
 | POST    | `/mcp`     | endpoint MCP (`ask_memory`) pour agents externes|
 
@@ -125,11 +144,37 @@ curl -X POST http://127.0.0.1:8787/ingest/slack   # même pipeline, vrais messag
 
 ```bash
 cargo test -p weave-core -p weave-llm -p weave-ingest   # unitaires, sans DB
+export TEST_DATABASE_URL="postgres://weave:weave@localhost:5433/weave"
+cargo test -p weave-store --test postgres_integration   # intégration Postgres
+cargo test -p weave-api                                 # tests API ciblés
 ./scripts/eval.sh                                       # métriques E2E sur API live
 ```
 
+### Smoke E2E frontend
+
+```bash
+pnpm --dir apps/web install
+pnpm --dir apps/web exec playwright install
+pnpm --dir apps/web test:e2e
+```
+
+### CI
+
+Le dépôt inclut un workflow GitHub Actions minimal :
+
+- `cargo check`
+- `cargo test`
+- build de `apps/web`
+
 `eval.sh` est comparable entre providers : lance le serveur avec un
 `WEAVE_LLM_PROVIDER` / `WEAVE_EMBED_PROVIDER` différent et relance-le.
+
+## Validation ajoutée récemment
+
+- tests d'intégration Postgres pour `PgStore`
+- tests API ciblés sur les routes scopées
+- smoke E2E Playwright côté frontend
+- CI GitHub Actions minimale
 
 ## Roadmap
 
