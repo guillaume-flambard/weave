@@ -1,0 +1,11 @@
+<svg viewBox="0 0 300 100" xmlns="http://www.w3.org/2000/svg" style="color:#37352f">
+  <!-- Horizontal lockup — mark + wordmark. Wordmark uses Inter; convert to outlines
+       for hand-off if Inter is not embedded. -->
+  <g transform="translate(5 3.2) scale(0.9)">
+    <path d="M22 30 L38 74 L50 46 L62 74 L78 30" fill="none" stroke="currentColor"
+          stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="78" cy="30" r="5.5" fill="#2383e2"/>
+  </g>
+  <text x="104" y="63" font-family="Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="46" font-weight="600" letter-spacing="-1.5" fill="currentColor">Weave</text>
+</svg>

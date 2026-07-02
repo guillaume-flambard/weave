@@ -1,0 +1,9 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- App icon / tile — white mark on deep ink, matches the product header. -->
+  <rect x="4" y="4" width="92" height="92" rx="20" fill="#37352f"/>
+  <g transform="translate(50 50) scale(0.72) translate(-50 -52)">
+    <path d="M22 30 L38 74 L50 46 L62 74 L78 30" fill="none" stroke="#ffffff"
+          stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="78" cy="30" r="5.5" fill="#2383e2"/>
+  </g>
+</svg>

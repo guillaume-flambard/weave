@@ -24,6 +24,13 @@ Generated with the `logo-generator` skill. 6 distinct concepts, monochrome
 and the accent bead is the "emergent skill" moment. It also matches the app's
 existing dark "W" tile: place the white mark on a `#37352f` `rounded-md` square.
 
+## Final set — Thread W (`final/`)
+Selected primary, developed into a full set:
+- `mark.svg` — primary mark (accent bead) · `mark-mono.svg` — one-color · `mark-white.svg` — knockout for dark.
+- `app-tile.svg` + `icon-1024.png` / `icon-512.png` — app icon (white mark on `#37352f`).
+- `favicon-32.png` / `favicon-16.png` — favicons.
+- `lockup.svg` + `lockup.png` — horizontal mark + "Weave" wordmark (Inter 600, `-1.5` tracking). Convert text to outlines on hand-off if Inter isn't embedded.
+
 ## Use as an asset for Claude Design / product
 - Favicon / app icon: any `png/*.png` (transparent) or the SVG.
 - App tile: mark in white on `#37352f`, `rounded-md`.
