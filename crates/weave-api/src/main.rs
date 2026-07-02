@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -32,6 +32,7 @@ const DEFAULT_PROJECT: &str = "pennylane";
 struct AppState {
     runtime: Arc<Runtime>,
     store: Arc<PgStore>,
+    api_key: Option<String>,
 }
 
 #[tokio::main]
@@ -50,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
+    let api_key = std::env::var("WEAVE_API_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
 
     // Storage: one Postgres behind all ports.
     let store = Arc::new(PgStore::connect(&database_url).await?);
@@ -89,7 +93,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("LLM gateway: {}", runtime.llm_name());
     runtime.seed_predefined_agents(DEFAULT_PROJECT).await?;
 
-    let state = AppState { runtime, store };
+    let state = AppState {
+        runtime,
+        store,
+        api_key,
+    };
 
     let app = Router::new()
         .route("/health", get(health))
@@ -111,18 +119,38 @@ async fn main() -> anyhow::Result<()> {
         .route("/agents/approve", post(approve_agent))
         .route("/agents/run", post(run_agent))
         .route("/mcp", post(mcp))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(cors_layer())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("Weave API listening on http://{addr}");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn cors_layer() -> CorsLayer {
+    let allow_any = std::env::var("WEAVE_CORS_ALLOW_ANY")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if allow_any {
+        return CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any);
+    }
+
+    let origin = std::env::var("WEAVE_CORS_ORIGIN")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "http://127.0.0.1:3200".into());
+    let origin = HeaderValue::from_str(&origin)
+        .unwrap_or_else(|_| HeaderValue::from_static("http://127.0.0.1:3200"));
+
+    CorsLayer::new()
+        .allow_origin(origin)
+        .allow_methods([Method::GET, Method::POST, Method::PUT])
+        .allow_headers(Any)
 }
 
 fn llm_model() -> String {
@@ -142,6 +170,23 @@ async fn health(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "status": "ok", "service": "weave", "llm": state.runtime.llm_name() }))
 }
 
+fn require_api_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    let Some(expected) = &state.api_key else {
+        return Ok(());
+    };
+
+    let provided = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .or_else(|| headers.get("x-api-key").and_then(|h| h.to_str().ok()));
+
+    match provided {
+        Some(value) if value == expected => Ok(()),
+        _ => Err(AppError::unauthorized("missing or invalid API key")),
+    }
+}
+
 #[derive(Deserialize)]
 struct ProjectQ {
     project: Option<String>,
@@ -154,8 +199,10 @@ fn project_of(q: &ProjectQ) -> String {
 /// Kick off a live replay of the seed stream in the background.
 async fn replay(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
-) -> Json<Value> {
+) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let project = project_of(&q);
     let runtime = state.runtime.clone();
     tokio::spawn(async move {
@@ -168,7 +215,7 @@ async fn replay(
         }
         tracing::info!("replay complete");
     });
-    Json(json!({ "status": "replaying", "project": project_of(&q) }))
+    Ok(Json(json!({ "status": "replaying", "project": project_of(&q) })))
 }
 
 // --- Sandbox: bring-your-own-org ---
@@ -201,8 +248,10 @@ struct LoadReq {
 /// Load a preset as the active org: store its config, wipe old data, seed agents.
 async fn load_org(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<LoadReq>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::OrgStore;
     let cfg = preset_by_org(&req.org)
         .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", req.org))?;
@@ -216,8 +265,10 @@ async fn load_org(
 /// Save an edited org config.
 async fn put_org(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(cfg): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::OrgStore;
     let org = cfg.get("org").and_then(Value::as_str).unwrap_or(DEFAULT_PROJECT).to_string();
     state.store.save_org_config(&org, &cfg).await?;
@@ -233,8 +284,10 @@ struct SimReq {
 /// simulation). Uses the stored config, else the preset.
 async fn simulate(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<SimReq>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_core::OrgConfig;
     use weave_store::OrgStore;
     let org = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
@@ -271,8 +324,10 @@ struct InjectReq {
 /// Manually inject one message (the tester types as a team member).
 async fn inject(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<InjectReq>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let org = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
     let mut payload = json!({
         "text": req.text,
@@ -301,8 +356,10 @@ async fn inject(
 /// wire" path: same emergence, but on real messages.
 async fn ingest_slack(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let token = std::env::var("SLACK_BOT_TOKEN").ok().filter(|t| !t.trim().is_empty());
     let channel = std::env::var("SLACK_CHANNEL").ok().filter(|c| !c.trim().is_empty());
     let (Some(token), Some(channel)) = (token, channel) else {
@@ -331,8 +388,10 @@ async fn ingest_slack(
 /// Wipe one project so a replay can be rehearsed from scratch.
 async fn reset(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let project = project_of(&q);
     state.store.reset(&project).await?;
     state.runtime.seed_predefined_agents(&project).await?;
@@ -405,8 +464,10 @@ struct AskReq {
 
 async fn ask(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<AskReq>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
     let result = state.runtime.answer(&project, &req.question).await?;
     Ok(Json(json!(result)))
@@ -430,8 +491,10 @@ struct ApproveReq {
 /// Human-in-the-loop governance: activate an emergent (pending) agent.
 async fn approve_agent(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<ApproveReq>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_core::AgentStatus;
     use weave_store::AgentStore;
     let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
@@ -451,8 +514,10 @@ struct RunReq {
 
 async fn run_agent(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RunReq>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
     let agent = req.agent.unwrap_or_else(|| "assistant".into());
     let run = state.runtime.run_agent(&project, &agent, &req.task).await?;
@@ -469,7 +534,14 @@ fn rpc_err(id: Value, code: i32, message: &str) -> Json<Value> {
     Json(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }))
 }
 
-async fn mcp(State(state): State<AppState>, Json(req): Json<Value>) -> Json<Value> {
+async fn mcp(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> axum::response::Response {
+    if let Err(err) = require_api_key(&state, &headers) {
+        return err.into_response();
+    }
     let id = req.get("id").cloned().unwrap_or(Value::Null);
     let method = req.get("method").and_then(Value::as_str).unwrap_or("");
 
@@ -481,7 +553,8 @@ async fn mcp(State(state): State<AppState>, Json(req): Json<Value>) -> Json<Valu
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "weave", "version": "0.1.0" }
             }),
-        ),
+        )
+        .into_response(),
         "tools/list" => rpc_ok(
             id,
             json!({ "tools": [{
@@ -496,12 +569,13 @@ async fn mcp(State(state): State<AppState>, Json(req): Json<Value>) -> Json<Valu
                     "required": ["question"]
                 }
             }] }),
-        ),
+        )
+        .into_response(),
         "tools/call" => {
             let params = req.get("params").cloned().unwrap_or_default();
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             if name != "ask_memory" {
-                return rpc_err(id, -32601, "unknown tool");
+                return rpc_err(id, -32601, "unknown tool").into_response();
             }
             let args = params.get("arguments").cloned().unwrap_or_default();
             let project = args
@@ -521,28 +595,47 @@ async fn mcp(State(state): State<AppState>, Json(req): Json<Value>) -> Json<Valu
                         "content": [{ "type": "text", "text": res.answer }],
                         "structuredContent": res
                     }),
-                ),
-                Err(e) => rpc_err(id, -32000, &e.to_string()),
+                )
+                .into_response(),
+                Err(e) => rpc_err(id, -32000, &e.to_string()).into_response(),
             }
         }
-        m if m.starts_with("notifications/") => Json(json!({})),
-        _ => rpc_err(id, -32601, "method not found"),
+        m if m.starts_with("notifications/") => Json(json!({})).into_response(),
+        _ => rpc_err(id, -32601, "method not found").into_response(),
     }
 }
 
 // --- Error plumbing ---
 
-struct AppError(anyhow::Error);
+struct AppError {
+    status: StatusCode,
+    error: anyhow::Error,
+    client_message: String,
+}
+
+impl AppError {
+    fn unauthorized(message: impl Into<String>) -> Self {
+        AppError {
+            status: StatusCode::UNAUTHORIZED,
+            error: anyhow::anyhow!("unauthorized"),
+            client_message: message.into(),
+        }
+    }
+}
 
 impl<E: Into<anyhow::Error>> From<E> for AppError {
     fn from(e: E) -> Self {
-        AppError(e.into())
+        AppError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: e.into(),
+            client_message: "internal server error".into(),
+        }
     }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
-        tracing::error!("request error: {:#}", self.0);
-        (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
+        tracing::error!("request error: {:#}", self.error);
+        (self.status, self.client_message).into_response()
     }
 }
