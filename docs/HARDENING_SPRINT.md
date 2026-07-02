@@ -106,13 +106,13 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ## Semaine 2 — Frontend structure + validation + CI
 
 ### Jour 6 — Extraire le data layer frontend
-- [ ] Créer `weave/apps/web/lib/api.ts`
-- [ ] Créer `weave/apps/web/lib/types.ts`
-- [ ] Créer `weave/apps/web/hooks/use-weave-dashboard.ts`
+- [x] Créer `weave/apps/web/lib/api.ts`
+- [x] Créer `weave/apps/web/lib/types.ts`
+- [x] Créer `weave/apps/web/hooks/use-weave-dashboard.ts`
 - [ ] Créer `weave/apps/web/hooks/use-weave-events.ts` si utile
-- [ ] Déplacer les appels `fetch` dans `api.ts`
-- [ ] Déplacer les types locaux hors de `page.tsx`
-- [ ] Réduire significativement la taille de `page.tsx`
+- [x] Déplacer les appels `fetch` dans `api.ts`
+- [x] Déplacer les types locaux hors de `page.tsx`
+- [x] Réduire significativement la taille de `page.tsx`
 - [ ] Vérifier que le comportement reste identique
 
 **Done when:**
@@ -212,8 +212,8 @@ Si le temps manque :
 ## Frontend
 - [ ] plus de `catch {}` silencieux sur le flow principal
 - [ ] feedback d’erreur visible
-- [ ] `page.tsx` nettement allégé
-- [ ] composants/hooks extraits
+- [x] `page.tsx` nettement allégé
+- [x] composants/hooks extraits
 
 ## Validation
 - [ ] flow E2E principal passe
