@@ -209,15 +209,16 @@ async fn replay(
     require_api_key(&state, &headers)?;
     let project = project_of(&q);
     let runtime = state.runtime.clone();
+    tracing::info!(project = %project, "replay requested");
     tokio::spawn(async move {
         for mut event in seed_events() {
             event.project = project.clone();
             if let Err(e) = runtime.ingest(&event).await {
-                tracing::error!("ingest failed: {e}");
+                tracing::error!(project = %project, "replay ingest failed: {e}");
             }
             tokio::time::sleep(Duration::from_millis(750)).await;
         }
-        tracing::info!("replay complete");
+        tracing::info!(project = %project, "replay complete");
     });
     Ok(Json(json!({ "status": "replaying", "project": project_of(&q) })))
 }
@@ -260,6 +261,7 @@ async fn load_org(
     let cfg = preset_by_org(&req.org)
         .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", req.org))?;
     let value = json!(cfg);
+    tracing::info!(org = %req.org, "load_org requested");
     state.store.save_org_config(&req.org, &value).await?;
     state.store.reset(&req.org).await?;
     state.runtime.seed_predefined_agents(&req.org).await?;
@@ -275,6 +277,7 @@ async fn put_org(
     require_api_key(&state, &headers)?;
     use weave_store::OrgStore;
     let org = cfg.get("org").and_then(Value::as_str).unwrap_or(DEFAULT_PROJECT).to_string();
+    tracing::info!(org = %org, "org config saved");
     state.store.save_org_config(&org, &cfg).await?;
     Ok(Json(json!({ "status": "saved", "org": org })))
 }
@@ -299,6 +302,7 @@ async fn simulate(
         Some(v) => serde_json::from_value(v)?,
         None => preset_by_org(&org).ok_or_else(|| anyhow::anyhow!("no org config for {org}"))?,
     };
+    tracing::info!(project = %org, "simulation requested");
     let events = generate_events(&cfg);
     let n = events.len();
     let runtime = state.runtime.clone();
@@ -351,6 +355,7 @@ async fn inject(
         payload,
         confidence: 1.0,
     };
+    tracing::info!(project = %event.project, actor = %event.actor, "manual inject requested");
     state.runtime.ingest(&event).await?;
     Ok(Json(json!({ "status": "injected" })))
 }
@@ -374,6 +379,7 @@ async fn ingest_slack(
     };
 
     let project = project_of(&q);
+    tracing::info!(project = %project, source = "slack", "slack ingest requested");
     let connector = SlackConnector::new(token, channel, &project);
     let events = connector.poll().await?; // surface auth/permission errors now
     let n = events.len();
@@ -397,6 +403,7 @@ async fn reset(
 ) -> Result<Json<Value>, AppError> {
     require_api_key(&state, &headers)?;
     let project = project_of(&q);
+    tracing::info!(project = %project, "reset requested");
     state.store.reset(&project).await?;
     state.runtime.seed_predefined_agents(&project).await?;
     Ok(Json(json!({ "status": "reset", "project": project })))
@@ -473,6 +480,7 @@ async fn ask(
 ) -> Result<Json<Value>, AppError> {
     require_api_key(&state, &headers)?;
     let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
+    tracing::info!(project = %project, question = %req.question, "ask requested");
     let result = state.runtime.answer(&project, &req.question).await?;
     Ok(Json(json!(result)))
 }
@@ -502,6 +510,7 @@ async fn approve_agent(
     use weave_core::AgentStatus;
     use weave_store::AgentStore;
     let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
+    tracing::info!(project = %project, agent = %req.name, "approve_agent requested");
     state
         .store
         .set_agent_status(&project, &req.name, AgentStatus::Active)
@@ -524,6 +533,7 @@ async fn run_agent(
     require_api_key(&state, &headers)?;
     let project = req.project.unwrap_or_else(|| DEFAULT_PROJECT.into());
     let agent = req.agent.unwrap_or_else(|| "assistant".into());
+    tracing::info!(project = %project, agent = %agent, task = %req.task, "run_agent requested");
     let run = state.runtime.run_agent(&project, &agent, &req.task).await?;
     Ok(Json(json!(run)))
 }

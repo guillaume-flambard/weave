@@ -168,20 +168,20 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 10 — Observabilité légère + docs alignées
-- [ ] Ajouter des logs plus explicites sur :
-  - [ ] `reset`
-  - [ ] `simulate`
-  - [ ] `inject`
-  - [ ] `ask`
-  - [ ] `approve_agent`
-  - [ ] `run_agent`
-- [ ] Mettre à jour `README.md`
+- [x] Ajouter des logs plus explicites sur :
+  - [x] `reset`
+  - [x] `simulate`
+  - [x] `inject`
+  - [x] `ask`
+  - [x] `approve_agent`
+  - [x] `run_agent`
+- [x] Mettre à jour `README.md`
 - [ ] Mettre à jour la doc d’audit si besoin
-- [ ] Documenter :
-  - [ ] mode auth
-  - [ ] variables d’environnement
-  - [ ] lancement tests
-  - [ ] flow de validation
+- [x] Documenter :
+  - [x] mode auth
+  - [x] variables d’environnement
+  - [x] lancement tests
+  - [x] flow de validation
   - [ ] limites restantes connues
 
 **Done when:**
@@ -223,7 +223,7 @@ Si le temps manque :
 
 ## Produit
 - [ ] démo toujours fluide
-- [ ] docs réalignées avec l’état réel
+- [x] docs réalignées avec l’état réel
 
 ---
 
