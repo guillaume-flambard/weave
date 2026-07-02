@@ -86,9 +86,11 @@ export function useGuidedTour() {
     d.drive();
   }, []);
 
-  // Auto-start on first visit only.
+  // Auto-start on first visit only. `?tour=off` disables auto-start
+  // (handy for screenshots and scripted demos).
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("tour") === "off") return;
     if (localStorage.getItem(SEEN_KEY)) return;
     localStorage.setItem(SEEN_KEY, "1");
     const t = setTimeout(start, 600);
