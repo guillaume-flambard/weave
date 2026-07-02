@@ -8,15 +8,15 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ## Semaine 1 — Backend/API hardening
 
 ### Jour 1 — Corriger le scoping API
-- [ ] Auditer tous les handlers de `weave/crates/weave-api/src/main.rs`
-- [ ] Corriger `approve_agent` pour utiliser un `project` explicite
-- [ ] Corriger `/reset` pour permettre un reset scoped par projet
-- [ ] Revoir `/ingest/slack` :
-  - [ ] soit ajouter `project`
+- [x] Auditer tous les handlers de `weave/crates/weave-api/src/main.rs`
+- [x] Corriger `approve_agent` pour utiliser un `project` explicite
+- [x] Corriger `/reset` pour permettre un reset scoped par projet
+- [x] Revoir `/ingest/slack` :
+  - [x] soit ajouter `project`
   - [ ] soit le marquer explicitement “mode démo”
-- [ ] Vérifier la cohérence `DEFAULT_PROJECT` vs query param vs body JSON
-- [ ] Vérifier que toutes les routes mutatives utilisent le bon scope projet
-- [ ] Lancer `cargo check`
+- [x] Vérifier la cohérence `DEFAULT_PROJECT` vs query param vs body JSON
+- [x] Vérifier que toutes les routes mutatives utilisent le bon scope projet
+- [x] Lancer `cargo check`
 - [ ] Tester les routes corrigées manuellement avec `curl`
 
 **Done when:**
@@ -25,20 +25,20 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 2 — Ajouter une sécurité API minimale
-- [ ] Restreindre CORS via configuration
-- [ ] Ajouter une auth simple pour l’API
-  - [ ] `Authorization: Bearer ...` ou `X-API-Key`
-- [ ] Protéger les routes mutatives :
-  - [ ] `/reset`
-  - [ ] `/org/load`
-  - [ ] `/org` `PUT`
-  - [ ] `/simulate`
-  - [ ] `/inject`
-  - [ ] `/agents/approve`
-  - [ ] `/agents/run`
-  - [ ] `/ingest/slack`
-  - [ ] `/mcp` si nécessaire
-- [ ] Ne plus renvoyer les erreurs internes brutes au client
+- [x] Restreindre CORS via configuration
+- [x] Ajouter une auth simple pour l’API
+  - [x] `Authorization: Bearer ...` ou `X-API-Key`
+- [x] Protéger les routes mutatives :
+  - [x] `/reset`
+  - [x] `/org/load`
+  - [x] `/org` `PUT`
+  - [x] `/simulate`
+  - [x] `/inject`
+  - [x] `/agents/approve`
+  - [x] `/agents/run`
+  - [x] `/ingest/slack`
+  - [x] `/mcp` si nécessaire
+- [x] Ne plus renvoyer les erreurs internes brutes au client
 - [ ] Vérifier qu’une requête sans auth échoue
 - [ ] Vérifier qu’une requête avec auth réussit
 
@@ -49,16 +49,16 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 3 — Ajouter des tests d’intégration `PgStore`
-- [ ] Créer une suite de tests d’intégration DB
-- [ ] Tester les migrations
-- [ ] Tester `insert_event` + dédup
-- [ ] Tester `reset(project)`
+- [x] Créer une suite de tests d’intégration DB
+- [x] Tester les migrations
+- [x] Tester `insert_event` + dédup
+- [x] Tester `reset(project)`
 - [ ] Tester `insert_fact` + `recent_facts`
-- [ ] Tester `observe` sur les patterns
-- [ ] Tester `insert_skill` + unicité
-- [ ] Tester `insert_agent` + `set_agent_status`
-- [ ] Tester `save_org_config` + `get_org_config`
-- [ ] Documenter comment lancer les tests DB
+- [x] Tester `observe` sur les patterns
+- [x] Tester `insert_skill` + unicité
+- [x] Tester `insert_agent` + `set_agent_status`
+- [x] Tester `save_org_config` + `get_org_config`
+- [x] Documenter comment lancer les tests DB
 
 **Done when:**
 - les chemins critiques du store concret sont couverts
@@ -66,19 +66,19 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 4 — Ajouter des tests API Axum
-- [ ] Créer une suite de tests API
-- [ ] Tester `/health`
+- [x] Créer une suite de tests API
+- [x] Tester `/health`
 - [ ] Tester `/stats`
 - [ ] Tester `/facts`
 - [ ] Tester `/skills`
 - [ ] Tester `/ask`
 - [ ] Tester `/agents`
-- [ ] Tester `/agents/approve`
-- [ ] Tester `/reset`
+- [x] Tester `/agents/approve`
+- [x] Tester `/reset`
 - [ ] Tester `/inject`
-- [ ] Vérifier les status codes
-- [ ] Vérifier les JSON de réponse
-- [ ] Vérifier auth + scoping projet
+- [x] Vérifier les status codes
+- [x] Vérifier les JSON de réponse
+- [x] Vérifier auth + scoping projet
 
 **Done when:**
 - les endpoints principaux sont validés automatiquement
@@ -192,10 +192,10 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 # Top 5 priorités absolues
 Si le temps manque :
 
-- [ ] Corriger le scoping API
-- [ ] Ajouter auth + CORS minimum
-- [ ] Ajouter tests d’intégration `PgStore`
-- [ ] Ajouter tests API
+- [x] Corriger le scoping API
+- [x] Ajouter auth + CORS minimum
+- [x] Ajouter tests d’intégration `PgStore`
+- [x] Ajouter tests API
 - [ ] Rendre les erreurs frontend visibles
 
 ---
@@ -207,7 +207,7 @@ Si le temps manque :
 - [ ] auth minimale en place
 - [ ] CORS restreint
 - [ ] erreurs internes non exposées brut
-- [ ] tests store/API verts
+- [x] tests store/API verts
 
 ## Frontend
 - [ ] plus de `catch {}` silencieux sur le flow principal
