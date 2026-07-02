@@ -868,7 +868,7 @@ mod tests {
             .unwrap();
         assert_eq!(inject_response.status(), StatusCode::OK);
         let inject_body = json_body(inject_response).await;
-        assert_eq!(inject_body["ok"], true);
+        assert_eq!(inject_body["status"], "injected");
 
         let stats_response = app
             .clone()
