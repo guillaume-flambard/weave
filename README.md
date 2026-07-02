@@ -172,9 +172,15 @@ Le dépôt inclut un workflow GitHub Actions minimal :
 ## Validation ajoutée récemment
 
 - tests d'intégration Postgres pour `PgStore`
-- tests API ciblés sur les routes scopées
+- tests API ciblés sur les routes scopées et principales (`/stats`, `/facts`, `/skills`, `/ask`, `/agents`, `/inject`)
 - smoke E2E Playwright côté frontend
 - CI GitHub Actions minimale
+
+## Limites connues
+
+- le scénario E2E Playwright complet reste volontairement non stabilisé, car l'UI actuelle doit être refondue
+- la CI n'exécute pas encore de smoke E2E navigateur
+- quelques vérifications manuelles `curl` restent utiles pour valider auth/CORS en environnement local ou preview
 
 ## Roadmap
 

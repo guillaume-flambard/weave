@@ -111,6 +111,36 @@ async fn event_dedup_and_reset_are_project_scoped() {
 }
 
 #[tokio::test]
+async fn fact_roundtrip_recent_facts_and_scoping_work() {
+    let Some(store) = test_store().await else {
+        eprintln!("skipping postgres integration test: TEST_DATABASE_URL not set or unavailable");
+        return;
+    };
+
+    let project = unique_project("store-fact");
+    let other_project = unique_project("store-fact-other");
+    let fact = sample_fact(&project);
+    let other_fact = sample_fact(&other_project);
+
+    store.insert_fact(&fact).await.unwrap();
+    store.insert_fact(&other_fact).await.unwrap();
+
+    let recent = store.recent_facts(&project, 10).await.unwrap();
+    assert_eq!(recent.len(), 1);
+    assert_eq!(recent[0].project, project);
+    assert_eq!(recent[0].content, fact.content);
+    assert_eq!(recent[0].team, "ops");
+    assert_eq!(recent[0].workstream, "banking");
+
+    let other_recent = store.recent_facts(&other_project, 10).await.unwrap();
+    assert_eq!(other_recent.len(), 1);
+    assert_eq!(other_recent[0].project, other_project);
+
+    let limited = store.recent_facts(&project, 1).await.unwrap();
+    assert_eq!(limited.len(), 1);
+}
+
+#[tokio::test]
 async fn skill_uniqueness_pattern_tracking_and_org_config_roundtrip_work() {
     let Some(store) = test_store().await else {
         eprintln!("skipping postgres integration test: TEST_DATABASE_URL not set or unavailable");

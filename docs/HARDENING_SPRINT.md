@@ -13,11 +13,11 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 - [x] Corriger `/reset` pour permettre un reset scoped par projet
 - [x] Revoir `/ingest/slack` :
   - [x] soit ajouter `project`
-  - [ ] soit le marquer explicitement “mode démo”
+  - [x] soit le marquer explicitement “mode démo” (N/A: chemin réel conservé, scoped par `project`)
 - [x] Vérifier la cohérence `DEFAULT_PROJECT` vs query param vs body JSON
 - [x] Vérifier que toutes les routes mutatives utilisent le bon scope projet
 - [x] Lancer `cargo check`
-- [ ] Tester les routes corrigées manuellement avec `curl`
+- [x] Tester les routes corrigées manuellement avec `curl`
 
 **Done when:**
 - aucune route critique n’agit par erreur sur `DEFAULT_PROJECT`
@@ -39,8 +39,8 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
   - [x] `/ingest/slack`
   - [x] `/mcp` si nécessaire
 - [x] Ne plus renvoyer les erreurs internes brutes au client
-- [ ] Vérifier qu’une requête sans auth échoue
-- [ ] Vérifier qu’une requête avec auth réussit
+- [x] Vérifier qu’une requête sans auth échoue
+- [x] Vérifier qu’une requête avec auth réussit
 
 **Done when:**
 - les endpoints critiques ne sont plus publics
@@ -53,7 +53,7 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 - [x] Tester les migrations
 - [x] Tester `insert_event` + dédup
 - [x] Tester `reset(project)`
-- [ ] Tester `insert_fact` + `recent_facts`
+- [x] Tester `insert_fact` + `recent_facts`
 - [x] Tester `observe` sur les patterns
 - [x] Tester `insert_skill` + unicité
 - [x] Tester `insert_agent` + `set_agent_status`
@@ -68,14 +68,14 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ### Jour 4 — Ajouter des tests API Axum
 - [x] Créer une suite de tests API
 - [x] Tester `/health`
-- [ ] Tester `/stats`
-- [ ] Tester `/facts`
-- [ ] Tester `/skills`
-- [ ] Tester `/ask`
-- [ ] Tester `/agents`
+- [x] Tester `/stats`
+- [x] Tester `/facts`
+- [x] Tester `/skills`
+- [x] Tester `/ask`
+- [x] Tester `/agents`
 - [x] Tester `/agents/approve`
 - [x] Tester `/reset`
-- [ ] Tester `/inject`
+- [x] Tester `/inject`
 - [x] Vérifier les status codes
 - [x] Vérifier les JSON de réponse
 - [x] Vérifier auth + scoping projet
@@ -86,17 +86,17 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 5 — Fiabiliser le feedback frontend
-- [ ] Supprimer les `catch {}` silencieux du flow principal
-- [ ] Ajouter un message d’erreur visible dans l’UI
-- [ ] Ajouter état pending pour :
-  - [ ] `simulate`
-  - [ ] `reset`
-  - [ ] `ask`
-  - [ ] `inject`
-  - [ ] `approveAgent`
-  - [ ] `switchOrg`
-- [ ] Gérer explicitement le cas API hors ligne
-- [ ] Vérifier le comportement frontend si l’API retourne 500
+- [x] Supprimer les `catch {}` silencieux du flow principal
+- [x] Ajouter un message d’erreur visible dans l’UI
+- [x] Ajouter état pending pour :
+  - [x] `simulate`
+  - [x] `reset`
+  - [x] `ask`
+  - [x] `inject`
+  - [x] `approveAgent`
+  - [x] `switchOrg`
+- [x] Gérer explicitement le cas API hors ligne
+- [x] Vérifier le comportement frontend si l’API retourne 500
 
 **Done when:**
 - une erreur réseau ou backend est visible et compréhensible côté UI
@@ -113,7 +113,7 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 - [x] Déplacer les appels `fetch` dans `api.ts`
 - [x] Déplacer les types locaux hors de `page.tsx`
 - [x] Réduire significativement la taille de `page.tsx`
-- [ ] Vérifier que le comportement reste identique
+- [x] Vérifier que le comportement reste identique
 
 **Done when:**
 - le réseau et les types ne vivent plus dans `page.tsx`
@@ -121,15 +121,15 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 ---
 
 ### Jour 7 — Extraire les composants UI
-- [ ] Créer `TopBar`
-- [ ] Créer `ScopeBar`
-- [ ] Créer `FeedPanel`
-- [ ] Créer `MemoryPanel`
-- [ ] Créer `SkillsPanel`
-- [ ] Créer `AgentsPanel`
-- [ ] Créer `AskPanel`
-- [ ] Laisser `page.tsx` comme composition de haut niveau
-- [ ] Vérifier que le rendu final n’a pas régressé
+- [x] Créer `TopBar`
+- [x] Créer `ScopeBar`
+- [x] Créer `FeedPanel`
+- [x] Créer `MemoryPanel`
+- [x] Créer `SkillsPanel`
+- [x] Créer `AgentsPanel`
+- [x] Créer `AskPanel`
+- [x] Laisser `page.tsx` comme composition de haut niveau
+- [x] Vérifier que le rendu final n’a pas régressé
 
 **Done when:**
 - `page.tsx` devient un orchestrateur de page, plus un monolithe
@@ -159,8 +159,8 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
 - [x] Lancer `cargo test`
 - [x] Lancer build frontend
 - [x] Ajouter tests API/intégration si possible
-- [ ] Ajouter smoke E2E si l’environnement le permet
-- [ ] Vérifier qu’un échec bloque bien la pipeline
+- [x] Ajouter smoke E2E si l’environnement le permet
+- [x] Vérifier qu’un échec bloque bien la pipeline
 
 **Done when:**
 - chaque changement important passe par une validation automatique minimale
@@ -176,13 +176,13 @@ Faire passer `weave` de **démo forte** à **prototype durci et crédible pour p
   - [x] `approve_agent`
   - [x] `run_agent`
 - [x] Mettre à jour `README.md`
-- [ ] Mettre à jour la doc d’audit si besoin
+- [x] Mettre à jour la doc d’audit si besoin
 - [x] Documenter :
   - [x] mode auth
   - [x] variables d’environnement
   - [x] lancement tests
   - [x] flow de validation
-  - [ ] limites restantes connues
+  - [x] limites restantes connues
 
 **Done when:**
 - un autre dev peut lancer le projet et comprendre l’état réel du système
@@ -196,39 +196,39 @@ Si le temps manque :
 - [x] Ajouter auth + CORS minimum
 - [x] Ajouter tests d’intégration `PgStore`
 - [x] Ajouter tests API
-- [ ] Rendre les erreurs frontend visibles
+- [x] Rendre les erreurs frontend visibles
 
 ---
 
 # Critères de succès fin de sprint
 
 ## Backend/API
-- [ ] plus de route critique hardcodée sur `DEFAULT_PROJECT`
-- [ ] auth minimale en place
-- [ ] CORS restreint
-- [ ] erreurs internes non exposées brut
+- [x] plus de route critique hardcodée sur `DEFAULT_PROJECT`
+- [x] auth minimale en place
+- [x] CORS restreint
+- [x] erreurs internes non exposées brut
 - [x] tests store/API verts
 
 ## Frontend
-- [ ] plus de `catch {}` silencieux sur le flow principal
-- [ ] feedback d’erreur visible
+- [x] plus de `catch {}` silencieux sur le flow principal
+- [x] feedback d’erreur visible
 - [x] `page.tsx` nettement allégé
 - [x] composants/hooks extraits
 
 ## Validation
-- [ ] flow E2E principal passe
+- [ ] flow E2E principal passe (gelé: UI actuelle en attente de refonte, smoke en place)
 - [x] smoke E2E configuré
-- [ ] CI minimale verte
+- [x] CI minimale verte
 - [x] workflow CI minimal ajouté
 
 ## Produit
-- [ ] démo toujours fluide
+- [x] démo toujours fluide
 - [x] docs réalignées avec l’état réel
 
 ---
 
 # Risques à éviter
-- [ ] ne pas sur-refactorer le frontend trop tôt
-- [ ] ne pas perdre 3 jours sur une auth trop lourde
-- [ ] ne pas repousser les tests DB/API au profit de tâches plus “visibles”
-- [ ] ne pas casser la démo pendant le refactor sans filet de validation
+- [x] ne pas sur-refactorer le frontend trop tôt
+- [x] ne pas perdre 3 jours sur une auth trop lourde
+- [x] ne pas repousser les tests DB/API au profit de tâches plus “visibles”
+- [x] ne pas casser la démo pendant le refactor sans filet de validation

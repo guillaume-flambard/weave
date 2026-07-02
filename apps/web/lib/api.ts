@@ -4,14 +4,44 @@ const API = process.env.NEXT_PUBLIC_WEAVE_API || "http://127.0.0.1:8787";
 
 export { API };
 
+function extractErrorMessage(status: number, text: string) {
+  const trimmed = text.trim();
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed) as { error?: string; message?: string; hint?: string };
+      if (parsed.error) return parsed.error;
+      if (parsed.message) return parsed.message;
+      if (parsed.hint) return parsed.hint;
+    } catch {
+      return trimmed;
+    }
+  }
+
+  if (status >= 500) {
+    return "Le serveur a rencontré une erreur interne (HTTP 500).";
+  }
+  if (status === 401) {
+    return "Accès refusé : clé API manquante ou invalide.";
+  }
+  if (status === 403) {
+    return "Accès interdit.";
+  }
+  if (status === 404) {
+    return "Endpoint introuvable.";
+  }
+  return `HTTP ${status}`;
+}
+
 export async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, init);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
+    throw new Error(extractErrorMessage(res.status, text));
   }
   return res.json() as Promise<T>;
 }
+
+export { extractErrorMessage };
 
 export function getHealth() {
   return fetchJson<{ llm?: string }>(`${API}/health`);

@@ -837,6 +837,119 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stats_facts_skills_ask_agents_and_inject_work() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let project = unique_project("api-main");
+
+        let inject_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/inject")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "project": project,
+                            "team": "ops",
+                            "workstream": "banking",
+                            "text": "Comment relancer la synchro bancaire ?",
+                            "actor": "memo"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(inject_response.status(), StatusCode::OK);
+        let inject_body = json_body(inject_response).await;
+        assert_eq!(inject_body["ok"], true);
+
+        let stats_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/stats?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stats_response.status(), StatusCode::OK);
+        let stats_body = json_body(stats_response).await;
+        assert_eq!(stats_body["events"], 1);
+        assert_eq!(stats_body["facts"], 1);
+        assert!(stats_body["skills"].is_array());
+        assert!(stats_body["agents"].is_array());
+
+        let facts_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/facts?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(facts_response.status(), StatusCode::OK);
+        let facts_body = json_body(facts_response).await;
+        assert_eq!(facts_body.as_array().unwrap().len(), 1);
+        assert_eq!(facts_body[0]["project"], project);
+
+        let skills_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/skills?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(skills_response.status(), StatusCode::OK);
+        let skills_body = json_body(skills_response).await;
+        assert!(skills_body.is_array());
+
+        let ask_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/ask")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"project": project, "question": "Comment relancer la synchro bancaire ?"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ask_response.status(), StatusCode::OK);
+        let ask_body = json_body(ask_response).await;
+        assert!(ask_body["answer"].is_string());
+        assert!(ask_body["layers"].is_array());
+
+        let agents_response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/agents?project={project}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(agents_response.status(), StatusCode::OK);
+        let agents_body = json_body(agents_response).await;
+        assert!(agents_body.is_array());
+    }
+
+    #[tokio::test]
     async fn approve_agent_only_updates_requested_project() {
         let Some(app) = test_app().await else {
             eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");

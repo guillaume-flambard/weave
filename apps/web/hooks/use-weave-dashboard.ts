@@ -27,6 +27,18 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const [asking, setAsking] = useState(false);
 
   const [injectText, setInjectText] = useState("");
+  const [pendingAction, setPendingAction] = useState<"simulate" | "reset" | "ask" | "inject" | "approveAgent" | "switchOrg" | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const normalizeError = (error: unknown) => {
+    if (error instanceof Error) {
+      if (/Failed to fetch|NetworkError|Load failed/i.test(error.message)) {
+        return "API hors ligne ou inaccessible. Vérifiez que `weave-api` tourne et que `NEXT_PUBLIC_WEAVE_API` est correct.";
+      }
+      return error.message;
+    }
+    return "Une erreur inattendue est survenue.";
+  };
 
   const refetch = useCallback(async (id: string) => {
     try {
@@ -34,7 +46,9 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
       setSkills(s);
       setFacts(f);
       setAgents(ag);
-    } catch {}
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
+    }
   }, []);
 
   const loadOrgConfig = useCallback(async (id: string) => {
@@ -43,8 +57,12 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   }, []);
 
   useEffect(() => {
-    getHealth().then((d) => setLlm(d.llm || "")).catch(() => {});
-    getPresets().then(setPresets).catch(() => {});
+    getHealth()
+      .then((d) => setLlm(d.llm || ""))
+      .catch((error) => setErrorMessage(normalizeError(error)));
+    getPresets()
+      .then(setPresets)
+      .catch((error) => setErrorMessage(normalizeError(error)));
   }, []);
 
   const throttle = useRef(0);
@@ -84,52 +102,97 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   }, [loadOrgConfig, notifySkillEmerged, orgId, refetch]);
 
   const switchOrg = useCallback(async (id: string) => {
-    await loadOrg(id);
-    setFeed([]);
-    setSkills([]);
-    setFacts([]);
-    setAgents([]);
-    setAnswer(null);
-    setScope({});
-    setNewest(null);
-    setOrgId(id);
-    loadOrgConfig(id);
-    setTimeout(() => refetch(id), 300);
+    setPendingAction("switchOrg");
+    setErrorMessage(null);
+    try {
+      await loadOrg(id);
+      setFeed([]);
+      setSkills([]);
+      setFacts([]);
+      setAgents([]);
+      setAnswer(null);
+      setScope({});
+      setNewest(null);
+      setOrgId(id);
+      await loadOrgConfig(id);
+      setTimeout(() => refetch(id), 300);
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
+    } finally {
+      setPendingAction(null);
+    }
   }, [loadOrgConfig, refetch]);
 
   const simulate = useCallback(async () => {
-    await simulateOrg(orgId);
+    setPendingAction("simulate");
+    setErrorMessage(null);
+    try {
+      await simulateOrg(orgId);
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
+    } finally {
+      setPendingAction(null);
+    }
   }, [orgId]);
 
   const reset = useCallback(async () => {
-    await resetProject(orgId);
-    setFeed([]);
-    setAnswer(null);
-    setNewest(null);
-    setTimeout(() => refetch(orgId), 300);
+    setPendingAction("reset");
+    setErrorMessage(null);
+    try {
+      await resetProject(orgId);
+      setFeed([]);
+      setAnswer(null);
+      setNewest(null);
+      setTimeout(() => refetch(orgId), 300);
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
+    } finally {
+      setPendingAction(null);
+    }
   }, [orgId, refetch]);
 
   const ask = useCallback(async () => {
     setAsking(true);
+    setPendingAction("ask");
+    setErrorMessage(null);
     setAnswer(null);
     try {
       const res = await askMemory(orgId, question);
       setAnswer(res);
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
     } finally {
       setAsking(false);
+      setPendingAction(null);
     }
   }, [orgId, question]);
 
   const approveAgent = useCallback(async (name: string) => {
-    await approveAgentRequest(orgId, name);
-    setTimeout(() => refetch(orgId), 200);
+    setPendingAction("approveAgent");
+    setErrorMessage(null);
+    try {
+      await approveAgentRequest(orgId, name);
+      setTimeout(() => refetch(orgId), 200);
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
+    } finally {
+      setPendingAction(null);
+    }
   }, [orgId, refetch]);
 
   const inject = useCallback(async () => {
     if (!injectText.trim()) return;
-    await injectMessage(orgId, scope.team || "", scope.workstream || "", injectText, "vous");
-    setInjectText("");
-    setTimeout(() => refetch(orgId), 300);
+    setPendingAction("inject");
+    setErrorMessage(null);
+    try {
+      await injectMessage(orgId, scope.team || "", scope.workstream || "", injectText, "vous");
+      setInjectText("");
+      setTimeout(() => refetch(orgId), 300);
+    } catch (error) {
+      setErrorMessage(normalizeError(error));
+    } finally {
+      setPendingAction(null);
+    }
   }, [injectText, orgId, refetch, scope.team, scope.workstream]);
 
   return {
@@ -147,6 +210,8 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     newest,
     connected,
     llm,
+    pendingAction,
+    errorMessage,
     question,
     setQuestion,
     answer,
