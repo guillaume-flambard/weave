@@ -663,7 +663,7 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use std::sync::atomic::{AtomicU64, Ordering};
     use tower::util::ServiceExt;
-    use weave_core::{Agent, AgentStatus, MemoryLevel};
+    use weave_core::{Agent, AgentStatus, Event, Fact, FactType, MemoryLevel, Skill};
     use weave_llm::{EmbeddingGateway, Extraction, LlmGateway};
     use weave_store::{AgentStore, PgStore};
 
@@ -735,6 +735,54 @@ mod tests {
         serde_json::from_slice(&bytes).expect("body should be json")
     }
 
+    fn sample_event(project: &str) -> Event {
+        Event {
+            id: uuid::Uuid::new_v4(),
+            source: "manual".into(),
+            ts: chrono::Utc::now(),
+            actor: "memo".into(),
+            project: project.into(),
+            kind: "message".into(),
+            payload: json!({"text": "Comment relancer la synchro bancaire ?", "team": "ops", "workstream": "banking"}),
+            confidence: 1.0,
+        }
+    }
+
+    fn sample_fact(project: &str) -> Fact {
+        Fact {
+            id: uuid::Uuid::new_v4(),
+            event_id: None,
+            project: project.into(),
+            team: "ops".into(),
+            workstream: "banking".into(),
+            ftype: FactType::Answer,
+            author: "nicolas".into(),
+            topic: "relancer synchro bancaire".into(),
+            content: "Utiliser BankSync.rerun(client_id)".into(),
+            confidence: 0.95,
+            memory_level: MemoryLevel::Project,
+            embedding: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    fn sample_skill(project: &str, name: &str) -> Skill {
+        Skill {
+            id: uuid::Uuid::new_v4(),
+            project: project.into(),
+            team: "ops".into(),
+            workstream: "banking".into(),
+            name: name.into(),
+            trigger: "Comment relancer la synchro bancaire ?".into(),
+            body: "1. Lancer BankSync.rerun(client_id)".into(),
+            sources: vec![uuid::Uuid::new_v4()],
+            referents: vec!["nicolas".into()],
+            derived_from_pattern: None,
+            memory_level: MemoryLevel::Project,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
     fn sample_agent(project: &str, name: &str) -> Agent {
         Agent {
             id: uuid::Uuid::new_v4(),
@@ -743,7 +791,7 @@ mod tests {
             name: name.into(),
             role: "Tu aides l'équipe ops.".into(),
             domain: "finance-ops".into(),
-            skills: vec![],
+            skills: vec!["banking/relancer-synchro".into()],
             scope: MemoryLevel::Team,
             status: AgentStatus::Pending,
             derived_from: "test".into(),
@@ -843,7 +891,20 @@ mod tests {
             return;
         };
 
+        use weave_store::{AgentStore, EventStore, FactStore, SkillStore};
+
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let store = PgStore::from_pool(pool);
+        store.migrate().await.unwrap();
+
         let project = unique_project("api-main");
+        let agent_name = "specialiste-ops-finance-ops";
+
+        store.insert_event(&sample_event(&project)).await.unwrap();
+        store.insert_fact(&sample_fact(&project)).await.unwrap();
+        store.insert_skill(&sample_skill(&project, "banking/relancer-synchro")).await.unwrap();
+        store.insert_agent(&sample_agent(&project, agent_name)).await.unwrap();
 
         let inject_response = app
             .clone()
@@ -857,7 +918,7 @@ mod tests {
                             "project": project,
                             "team": "ops",
                             "workstream": "banking",
-                            "text": "Comment relancer la synchro bancaire ?",
+                            "text": "Message libre de test",
                             "actor": "memo"
                         })
                         .to_string(),
@@ -882,7 +943,7 @@ mod tests {
             .unwrap();
         assert_eq!(stats_response.status(), StatusCode::OK);
         let stats_body = json_body(stats_response).await;
-        assert!(stats_body["events"].as_i64().unwrap_or(0) >= 0);
+        assert!(stats_body["events"].as_i64().unwrap_or(0) >= 1);
         assert!(stats_body["facts"].as_i64().unwrap_or(0) >= 1);
         assert!(stats_body["skills"].is_array());
         assert!(stats_body["agents"].is_array());
