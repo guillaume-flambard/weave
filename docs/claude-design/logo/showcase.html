@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Weave — Logo concepts</title>
+<style>
+  :root{
+    --ink:#37352f; --ink-soft:#787066; --muted:#9b9a97;
+    --line:#e9e9e7; --subtle:#f7f7f5; --bg:#ffffff; --accent:#2383e2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:Inter,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 28px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:40px}
+  h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:14px;margin:0}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--bg);overflow:hidden}
+  .stage{height:180px;display:flex;align-items:center;justify-content:center;background:var(--subtle);border-bottom:1px solid var(--line)}
+  .stage img{width:96px;height:96px}
+  .meta{padding:14px 16px}
+  .name{font-size:13px;font-weight:600;margin:0 0 4px}
+  .why{font-size:12px;line-height:1.5;color:var(--ink-soft);margin:0}
+  .scale{display:flex;align-items:center;gap:14px;padding:12px 16px;border-top:1px solid var(--line)}
+  .scale img{height:20px;width:20px}
+  .scale .s32{height:32px;width:32px}
+  .tile{width:40px;height:40px;border-radius:8px;background:var(--ink);display:flex;align-items:center;justify-content:center}
+  .tile img{width:24px;height:24px;filter:invert(1) brightness(1.6)}
+  .scale span{font-size:11px;color:var(--muted);margin-left:auto}
+  footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Weave — logo concepts</h1>
+    <p class="sub">Cognitive Runtime · weaving threads · layered org memory · emergence — Notion palette (ink #37352f, accent #2383e2)</p>
+  </header>
+  <div class="grid" id="grid"></div>
+  <footer>Monochrome, currentColor-based SVG · scalable to favicon size · editable vectors in <code>svg/</code></footer>
+</div>
+<script>
+const items=[
+ ["01-weave-lattice","Weave lattice","Warp &amp; weft interlaced over-and-under — the literal weave. Structural, memorable, works as a favicon."],
+ ["02-thread-w","Thread W","One continuous strand traces a W, ending in an emergent node (accent bead). Direct monogram + brand story."],
+ ["03-memory-layers","Memory layers","Four nested scopes: personal → team → project → organization. Encodes the product's core model."],
+ ["04-emergence-node","Emergence node","A memory graph converging on a hub; the accent node is a skill that just emerged. Asymmetric energy."],
+ ["05-interlace-knot","Interlace knot","Two rings woven over/under — interconnection and shared memory. Calm, iconic, timeless."],
+ ["06-converge-dots","Converge dots","Many contributions (outer rings) resolving into one focal point of shared knowledge. Dot-matrix system."],
+];
+document.getElementById('grid').innerHTML=items.map(([f,n,w])=>`
+ <div class="card">
+   <div class="stage"><img src="svg/${f}.svg" alt="${n}"/></div>
+   <div class="meta"><p class="name">${n}</p><p class="why">${w}</p></div>
+   <div class="scale">
+     <img src="svg/${f}.svg" alt=""/>
+     <img class="s32" src="svg/${f}.svg" alt=""/>
+     <div class="tile"><img src="svg/${f}.svg" alt=""/></div>
+     <span>16 · 32 · app tile</span>
+   </div>
+ </div>`).join('');
+</script>
+</body>
+</html>

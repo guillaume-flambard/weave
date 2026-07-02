@@ -1,0 +1,19 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="color:#37352f">
+  <!-- Converge dots: many contributions (outer rings) resolving into a single focal
+       point of shared knowledge. Dot-matrix system. -->
+  <defs>
+    <circle id="o" cx="50" cy="16" r="2.4" fill="currentColor"/>
+    <circle id="m" cx="50" cy="30" r="2.9" fill="currentColor"/>
+  </defs>
+  <g>
+    <use href="#o"/><use href="#o" transform="rotate(30 50 50)"/><use href="#o" transform="rotate(60 50 50)"/>
+    <use href="#o" transform="rotate(90 50 50)"/><use href="#o" transform="rotate(120 50 50)"/><use href="#o" transform="rotate(150 50 50)"/>
+    <use href="#o" transform="rotate(180 50 50)"/><use href="#o" transform="rotate(210 50 50)"/><use href="#o" transform="rotate(240 50 50)"/>
+    <use href="#o" transform="rotate(270 50 50)"/><use href="#o" transform="rotate(300 50 50)"/><use href="#o" transform="rotate(330 50 50)"/>
+  </g>
+  <g>
+    <use href="#m"/><use href="#m" transform="rotate(45 50 50)"/><use href="#m" transform="rotate(90 50 50)"/><use href="#m" transform="rotate(135 50 50)"/>
+    <use href="#m" transform="rotate(180 50 50)"/><use href="#m" transform="rotate(225 50 50)"/><use href="#m" transform="rotate(270 50 50)"/><use href="#m" transform="rotate(315 50 50)"/>
+  </g>
+  <circle cx="50" cy="50" r="5.5" fill="currentColor"/>
+</svg>

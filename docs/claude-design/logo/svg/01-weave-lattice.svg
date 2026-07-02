@@ -1,0 +1,9 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="color:#37352f">
+  <!-- Weave lattice: warp & weft interlaced over/under. The literal "weave". -->
+  <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+    <path d="M40 22 V55"/><path d="M40 65 V78"/>
+    <path d="M60 22 V35"/><path d="M60 45 V78"/>
+    <path d="M22 40 H35"/><path d="M45 40 H78"/>
+    <path d="M22 60 H55"/><path d="M65 60 H78"/>
+  </g>
+</svg>

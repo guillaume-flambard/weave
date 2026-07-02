@@ -1,0 +1,17 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="color:#37352f">
+  <!-- Emergence node: a small memory graph converging on a hub; one accent node is the
+       skill that just emerged. Asymmetric on purpose. -->
+  <g stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <path d="M50 54 L26 66"/>
+    <path d="M50 54 L32 33"/>
+    <path d="M50 54 L74 62"/>
+    <path d="M50 54 L58 26"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="50" cy="54" r="6.5"/>
+    <circle cx="26" cy="66" r="3.5"/>
+    <circle cx="32" cy="33" r="3.5"/>
+    <circle cx="74" cy="62" r="3.5"/>
+  </g>
+  <circle cx="58" cy="26" r="5.5" fill="#2383e2"/>
+</svg>
