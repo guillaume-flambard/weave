@@ -172,7 +172,12 @@ export default function Page() {
       {/* Top bar */}
       <header className="mb-4 flex items-center justify-between border-b border-line pb-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-ink text-white" style={{ fontWeight: 700 }}>W</div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-ink">
+            <svg viewBox="0 0 100 100" className="h-5 w-5" fill="none" aria-label="Weave">
+              <path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="#ffffff" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="78" cy="30" r="7" fill="#2383e2" />
+            </svg>
+          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold tracking-tight text-ink">Weave</h1>
