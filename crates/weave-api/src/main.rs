@@ -28,6 +28,8 @@ use weave_llm::{
 use weave_pipeline::{PipelineEvent, Runtime};
 use weave_store::{PgStore, Store};
 
+mod oauth;
+
 const DEFAULT_PROJECT: &str = "pennylane";
 
 #[derive(Clone)]
