@@ -54,10 +54,12 @@ futur (Qdrant / Kuzu / NATS) = un nouvel adaptateur, jamais une réécriture.
 docker compose up -d
 
 # 2. API. LLM multi-provider, défaut = Ollama local (aucune clé requise).
-#    Alternatives : WEAVE_LLM_PROVIDER = ollama | claude | heuristic | auto
+#    Alternatives : WEAVE_LLM_PROVIDER = ollama | groq | claude | heuristic | auto
 export DATABASE_URL="postgres://weave:weave@localhost:5433/weave"
-export WEAVE_LLM_PROVIDER=ollama            # défaut
+cp .env.example .env   # puis édite GROQ_API_KEY si provider=groq
+export WEAVE_LLM_PROVIDER=ollama            # ou groq (voir .env.example)
 export WEAVE_OLLAMA_MODEL="qwen3.5:9b"      # un modèle que tu as en local
+# export GROQ_API_KEY=gsk_...               # pour provider=groq
 # export ANTHROPIC_API_KEY=sk-ant-...       # pour provider=claude
 # export WEAVE_API_KEY="dev-secret"        # active une auth simple via Bearer/X-API-Key
 # export WEAVE_CORS_ORIGIN="http://127.0.0.1:3200"

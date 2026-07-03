@@ -124,6 +124,10 @@ pub fn seed_events() -> Vec<Event> {
         mk("slack", "nicolas", "message", a(
             "Pour relancer la synchro bancaire: rails runner 'BankSync.rerun(client_id)', puis vérifie le dashboard Bridge sur Grafana. Runbook Notion: 'Resync bancaire'.",
         )),
+        mk("notion", "nicolas", "doc_edit", json!({
+            "text": "Runbook « Resync bancaire » mis à jour : BankSync.rerun(client_id), contrôle Grafana Bridge, puis validation mapping.",
+            "topic": sync_topic,
+        })),
         mk("slack", "tom", "message", q("Comment on force une resynchro bancaire déjà ?")),
         mk("slack", "nicolas", "message", a(
             "Lance BankSync.rerun(client_id) en console, et check les webhooks Bridge.",
@@ -132,6 +136,10 @@ pub fn seed_events() -> Vec<Event> {
         mk("slack", "nicolas", "message", a(
             "Rappel: BankSync.rerun(client_id), puis regarde les logs Grafana pour les erreurs de mapping.",
         )),
+        mk("notion", "camille", "doc_edit", json!({
+            "text": "Checklist staging resync : BankSync.rerun, logs Bridge, runbook « Resync bancaire ».",
+            "topic": sync_topic,
+        })),
         mk("slack", "alex", "message", q("comment relancer synchro bancaire")),
         mk("slack", "lea", "message", q("Comment refaire tourner la synchro banque pour un client ?")),
 
@@ -147,6 +155,14 @@ pub fn seed_events() -> Vec<Event> {
         mk("slack", "alex", "message", wq("Comment rejouer un webhook stripe")),
         mk("slack", "nina", "message", wq("Comment refaire passer un webhook de paiement Stripe ?")),
     ]
+}
+
+/// Notion-tagged events from the seed stream (for demo ingest).
+pub fn notion_seed_events() -> Vec<Event> {
+    seed_events()
+        .into_iter()
+        .filter(|e| e.source == "notion")
+        .collect()
 }
 
 #[cfg(test)]

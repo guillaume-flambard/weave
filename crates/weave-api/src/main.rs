@@ -15,16 +15,16 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use weave_ingest::{
-    generate_events, preset_by_org, presets, seed_events, Connector, SlackConnector,
+    generate_events, preset_by_org, presets, seed_events, notion_seed_events, Connector, SlackConnector,
 };
 use weave_llm::{
     ClaudeLlm, EmbeddingGateway, HashEmbedder, HeuristicLlm, LlmGateway, OllamaEmbedder, OllamaLlm,
     OpenaiLlm,
 };
-use weave_pipeline::Runtime;
+use weave_pipeline::{PipelineEvent, Runtime};
 use weave_store::{PgStore, Store};
 
 const DEFAULT_PROJECT: &str = "pennylane";
@@ -38,6 +38,9 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load `.env` from the repo root when present (local dev).
+    let _ = dotenvy::dotenv();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -62,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
     let dyn_store: Arc<dyn Store> = store.clone();
 
     // LLM gateway — multi-provider, pluggable. Default: Ollama (local, no key).
-    // WEAVE_LLM_PROVIDER = ollama | claude | heuristic | auto | grok | openai
+    // WEAVE_LLM_PROVIDER = ollama | claude | heuristic | auto | groq | grok | openai
     let provider = std::env::var("WEAVE_LLM_PROVIDER").unwrap_or_else(|_| "ollama".into());
     let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
@@ -79,6 +82,18 @@ async fn main() -> anyhow::Result<()> {
         "auto" => match anthropic_key {
             Some(key) => Arc::new(ClaudeLlm::new(key, llm_model())),
             None => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
+        },
+        "groq" => match groq_api_key() {
+            Some(key) => Arc::new(OpenaiLlm::named(
+                groq_base_url(),
+                groq_model(),
+                key,
+                "groq",
+            )),
+            None => {
+                tracing::warn!("provider=groq but GROQ_API_KEY unset; using heuristic");
+                Arc::new(HeuristicLlm::new())
+            }
         },
         "grok" | "openai" => {
             let openai_key = std::env::var("OPENAI_API_KEY")
@@ -101,9 +116,15 @@ async fn main() -> anyhow::Result<()> {
         _ => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
     };
     // Embeddings — real semantic (Ollama nomic) by default, hash fallback.
-    // WEAVE_EMBED_PROVIDER = ollama | hash
+    // WEAVE_EMBED_PROVIDER = ollama | hash  (groq: use hash — no Groq embeddings wired)
     let embedder: Arc<dyn EmbeddingGateway> =
-        match std::env::var("WEAVE_EMBED_PROVIDER").unwrap_or_else(|_| "ollama".into()).as_str() {
+        match std::env::var("WEAVE_EMBED_PROVIDER").unwrap_or_else(|_| {
+            if provider == "groq" {
+                "hash".into()
+            } else {
+                "ollama".into()
+            }
+        }).as_str() {
             "hash" => Arc::new(HashEmbedder::new()),
             _ => Arc::new(OllamaEmbedder::new(ollama_url(), embed_model())),
         };
@@ -131,6 +152,7 @@ fn build_app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/replay", post(replay))
         .route("/ingest/slack", post(ingest_slack))
+        .route("/ingest/notion", post(ingest_notion))
         .route("/reset", post(reset))
         .route("/org", get(get_org).put(put_org))
         .route("/org/presets", get(get_presets))
@@ -163,15 +185,21 @@ fn cors_layer() -> CorsLayer {
             .allow_headers(Any);
     }
 
-    let origin = std::env::var("WEAVE_CORS_ORIGIN")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "http://127.0.0.1:3200".into());
-    let origin = HeaderValue::from_str(&origin)
-        .unwrap_or_else(|_| HeaderValue::from_static("http://127.0.0.1:3200"));
+    let origins: Vec<HeaderValue> = match std::env::var("WEAVE_CORS_ORIGIN") {
+        Ok(raw) if !raw.trim().is_empty() => raw
+            .split(',')
+            .map(str::trim)
+            .filter(|origin| !origin.is_empty())
+            .filter_map(|origin| HeaderValue::from_str(origin).ok())
+            .collect(),
+        _ => vec![
+            HeaderValue::from_static("http://127.0.0.1:3200"),
+            HeaderValue::from_static("http://localhost:3200"),
+        ],
+    };
 
     CorsLayer::new()
-        .allow_origin(origin)
+        .allow_origin(AllowOrigin::list(origins))
         .allow_methods([Method::GET, Method::POST, Method::PUT])
         .allow_headers(Any)
 }
@@ -184,6 +212,26 @@ fn ollama_url() -> String {
 }
 fn ollama_model() -> String {
     std::env::var("WEAVE_OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.5:9b".into())
+}
+fn groq_api_key() -> Option<String> {
+    std::env::var("GROQ_API_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty())
+        .or_else(|| {
+            std::env::var("OPENAI_API_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty())
+        })
+}
+fn groq_base_url() -> String {
+    std::env::var("GROQ_BASE_URL")
+        .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+        .unwrap_or_else(|_| "https://api.groq.com/openai/v1".into())
+}
+fn groq_model() -> String {
+    std::env::var("GROQ_MODEL")
+        .or_else(|_| std::env::var("OPENAI_MODEL"))
+        .unwrap_or_else(|_| "llama-3.1-8b-instant".into())
 }
 fn embed_model() -> String {
     std::env::var("WEAVE_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".into())
@@ -324,15 +372,29 @@ async fn simulate(
     tracing::info!(project = %org, "simulation requested");
     let events = generate_events(&cfg);
     let n = events.len();
+    let batch_id = uuid::Uuid::new_v4().to_string();
     let runtime = state.runtime.clone();
+    let store = state.store.clone();
     tokio::spawn(async move {
-        for event in events {
+        use weave_store::EventStore;
+        let before = store.count_events(&org).await.unwrap_or(0);
+        for mut event in events {
+            if let serde_json::Value::Object(ref mut map) = event.payload {
+                map.insert("_weave_sim_batch".into(), json!(batch_id));
+            }
             if let Err(e) = runtime.ingest(&event).await {
                 tracing::error!("simulate ingest failed: {e}");
             }
-            tokio::time::sleep(Duration::from_millis(180)).await;
+            tokio::time::sleep(Duration::from_millis(80)).await;
         }
-        tracing::info!("simulation complete ({n} events)");
+        let after = store.count_events(&org).await.unwrap_or(before);
+        let inserted = (after - before).max(0) as usize;
+        runtime.publish(PipelineEvent::SimulationComplete {
+            project: org.clone(),
+            batch_size: n,
+            inserted,
+        });
+        tracing::info!("simulation complete ({n} events, {inserted} inserted)");
     });
     Ok(Json(json!({ "status": "simulating", "events": n })))
 }
@@ -412,6 +474,32 @@ async fn ingest_slack(
         tracing::info!("slack ingest complete ({n} events)");
     });
     Ok(Json(json!({ "status": "ingesting", "source": "slack", "events": n, "project": project })))
+}
+
+/// Replay Notion-tagged seed events through the same pipeline (demo path).
+async fn ingest_notion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ProjectQ>,
+) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
+    let project = project_of(&q);
+    let mut events = notion_seed_events();
+    for event in &mut events {
+        event.project = project.clone();
+    }
+    let n = events.len();
+    tracing::info!(project = %project, source = "notion", events = n, "notion ingest requested");
+    let runtime = state.runtime.clone();
+    tokio::spawn(async move {
+        for event in events {
+            if let Err(e) = runtime.ingest(&event).await {
+                tracing::error!("notion ingest failed: {e}");
+            }
+        }
+        tracing::info!("notion ingest complete ({n} events)");
+    });
+    Ok(Json(json!({ "status": "ingesting", "source": "notion", "events": n, "project": project })))
 }
 
 /// Wipe one project so a replay can be rehearsed from scratch.

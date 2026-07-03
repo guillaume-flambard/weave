@@ -71,6 +71,12 @@ pub enum PipelineEvent {
         skills: Vec<String>,
         status: String,
     },
+    /// Emitted when a `/simulate` batch finishes (ingest may be partial on dedup).
+    SimulationComplete {
+        project: String,
+        batch_size: usize,
+        inserted: usize,
+    },
 }
 
 /// One step in an orchestrated agent run (for the trace UI).
@@ -176,6 +182,11 @@ impl Runtime {
 
     pub fn llm_name(&self) -> &'static str {
         self.llm.name()
+    }
+
+    /// Publish an out-of-band pipeline notification (e.g. simulation batch done).
+    pub fn publish(&self, ev: PipelineEvent) {
+        self.emit(ev);
     }
 
     fn emit(&self, ev: PipelineEvent) {

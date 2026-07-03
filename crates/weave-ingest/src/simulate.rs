@@ -137,8 +137,10 @@ pub fn generate_events(org: &OrgConfig) -> Vec<Event> {
     let mut i = 0i64;
     let mut out: Vec<Event> = Vec::new();
 
-    let mut push = |team: &str, ws: &str, actor: &str, text: String, topic: &str, answer: bool, entities: serde_json::Value, idx: &mut i64| {
+    let mut push = |team: &str, ws: &str, actor: &str, text: String, topic: &str, answer: bool, is_decision: bool, entities: serde_json::Value, idx: &mut i64| {
         *idx += 1;
+        let source = if answer || is_decision { "notion" } else { "slack" };
+        let kind = if answer || is_decision { "doc_edit" } else { "message" };
         let mut payload = json!({
             "text": text, "topic": topic, "team": team, "workstream": ws
         });
@@ -150,11 +152,11 @@ pub fn generate_events(org: &OrgConfig) -> Vec<Event> {
         }
         out.push(Event {
             id: Uuid::new_v4(),
-            source: "ai-session".into(),
+            source: source.into(),
             ts: base + Duration::minutes(*idx),
             actor: actor.to_string(),
             project: org.org.clone(),
-            kind: "message".into(),
+            kind: kind.into(),
             payload,
             confidence: 1.0,
         });
@@ -177,7 +179,7 @@ pub fn generate_events(org: &OrgConfig) -> Vec<Event> {
             // A decision framing the project.
             push(&team_slug, &ws, &referent,
                 format!("Décision équipe {} : on avance sur « {} ».", team.name, project.name),
-                &format!("{} — cadrage", project.name), false, ents.clone(), &mut i);
+                &format!("{} — cadrage", project.name), false, true, ents.clone(), &mut i);
 
             // The recurring need → a project skill emerges. Answers are
             // interleaved early so they're in memory before the threshold hits.
@@ -185,11 +187,11 @@ pub fn generate_events(org: &OrgConfig) -> Vec<Event> {
             for (qi, q) in qs.iter().enumerate() {
                 if qi == 2 {
                     for a in k.answers {
-                        push(&team_slug, &ws, &referent, a.to_string(), &project.theme, true, json!([]), &mut i);
+                        push(&team_slug, &ws, &referent, a.to_string(), &project.theme, true, false, json!([]), &mut i);
                     }
                 }
                 let actor = &members[qi % members.len()];
-                push(&team_slug, &ws, actor, q.clone(), &project.theme, false, json!([]), &mut i);
+                push(&team_slug, &ws, actor, q.clone(), &project.theme, false, false, json!([]), &mut i);
             }
 
             // Shared org convention, seeded in the first project of each team →
@@ -200,10 +202,10 @@ pub fn generate_events(org: &OrgConfig) -> Vec<Event> {
                     if qi == 2 {
                         push(&team_slug, &ws, &referent,
                             "On préfixe par le type et on met tout en kebab-case, ex: feat/relance-synchro.".into(),
-                            CONVENTION, true, json!([]), &mut i);
+                            CONVENTION, true, false, json!([]), &mut i);
                     }
                     let actor = &members[qi % members.len()];
-                    push(&team_slug, &ws, actor, q.clone(), CONVENTION, false, json!([]), &mut i);
+                    push(&team_slug, &ws, actor, q.clone(), CONVENTION, false, false, json!([]), &mut i);
                 }
             }
         }
@@ -223,6 +225,7 @@ mod tests {
         assert!(evs.len() > 40);
         // Every event is scoped to a team + workstream.
         assert!(evs.iter().all(|e| e.payload.get("team").is_some() && e.payload.get("workstream").is_some()));
+        assert!(evs.iter().all(|e| e.source == "slack" || e.source == "notion"));
         // The convention recurs across at least two distinct workstreams.
         let conv_ws: std::collections::HashSet<_> = evs.iter()
             .filter(|e| e.payload["topic"] == CONVENTION)

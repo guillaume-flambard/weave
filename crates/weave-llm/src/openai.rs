@@ -10,6 +10,7 @@ pub struct OpenaiLlm {
     model: String,
     api_key: String,
     fallback: HeuristicLlm,
+    provider_name: &'static str,
 }
 
 impl OpenaiLlm {
@@ -17,6 +18,15 @@ impl OpenaiLlm {
         base_url: impl Into<String>,
         model: impl Into<String>,
         api_key: impl Into<String>,
+    ) -> Self {
+        Self::named(base_url, model, api_key, "openai")
+    }
+
+    pub fn named(
+        base_url: impl Into<String>,
+        model: impl Into<String>,
+        api_key: impl Into<String>,
+        provider_name: &'static str,
     ) -> Self {
         OpenaiLlm {
             client: reqwest::Client::builder()
@@ -27,6 +37,7 @@ impl OpenaiLlm {
             model: model.into(),
             api_key: api_key.into(),
             fallback: HeuristicLlm::new(),
+            provider_name,
         }
     }
 
@@ -127,6 +138,6 @@ impl LlmGateway for OpenaiLlm {
     }
 
     fn name(&self) -> &'static str {
-        "openai"
+        self.provider_name
     }
 }
