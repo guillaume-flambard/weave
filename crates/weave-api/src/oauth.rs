@@ -2,8 +2,6 @@
 //! Pure helpers (`sign_state`, `verify_state`, `parse_oauth_response`) are unit
 //! tested offline; the network paths are tested against a wiremock server.
 
-#![allow(dead_code)] // items are consumed by Tasks 4-6 (authorize/callback/refresh/import); remove when wired
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};

@@ -463,16 +463,29 @@ async fn ingest_slack(
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
     require_api_key(&state, &headers)?;
-    let token = std::env::var("SLACK_BOT_TOKEN").ok().filter(|t| !t.trim().is_empty());
+    let project = project_of(&q);
     let channel = std::env::var("SLACK_CHANNEL").ok().filter(|c| !c.trim().is_empty());
+
+    // 1. Prefer a stored OAuth connection (refresh if expiring).
+    let token = match state.store.get_active_connection(&state.cipher, "slack").await? {
+        Some(conn) => match oauth::SlackConfig::from_env() {
+            Some(cfg) => Some(oauth::ensure_fresh(&state, &cfg, conn).await?.access_token),
+            None => Some(conn.access_token), // static token, no refresh possible
+        },
+        None => None,
+    };
+    // 2. Fall back to the legacy env token (keeps the offline demo working).
+    let token = token.or_else(|| {
+        std::env::var("SLACK_BOT_TOKEN").ok().filter(|t| !t.trim().is_empty())
+    });
+
     let (Some(token), Some(channel)) = (token, channel) else {
         return Ok(Json(json!({
             "status": "not_configured",
-            "hint": "set SLACK_BOT_TOKEN and SLACK_CHANNEL (scopes: channels:history, users:read)"
+            "hint": "connect Slack (POST /connections/slack/import or /oauth/slack/authorize) and set SLACK_CHANNEL"
         })));
     };
 
-    let project = project_of(&q);
     tracing::info!(project = %project, source = "slack", "slack ingest requested");
     let connector = SlackConnector::new(token, channel, &project);
     let events = connector.poll().await?; // surface auth/permission errors now
