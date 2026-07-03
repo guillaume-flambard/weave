@@ -144,7 +144,7 @@ export SLACK_CHANNEL=C0123456789
 curl -X POST http://127.0.0.1:8787/ingest/slack   # même pipeline, vrais messages
 ```
 
-Unset `SLACK_BOT_TOKEN` → le démo rejoue des événements Slack seed à la place.
+Sans `SLACK_BOT_TOKEN`, `/ingest/slack` renvoie `{status:"not_configured"}` (aucune ingestion).
 
 ### Notion (pages et bases de données)
 
