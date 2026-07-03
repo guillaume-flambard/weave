@@ -22,6 +22,7 @@ use weave_ingest::{
 };
 use weave_llm::{
     ClaudeLlm, EmbeddingGateway, HashEmbedder, HeuristicLlm, LlmGateway, OllamaEmbedder, OllamaLlm,
+    OpenaiLlm,
 };
 use weave_pipeline::Runtime;
 use weave_store::{PgStore, Store};
@@ -61,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
     let dyn_store: Arc<dyn Store> = store.clone();
 
     // LLM gateway — multi-provider, pluggable. Default: Ollama (local, no key).
-    // WEAVE_LLM_PROVIDER = ollama | claude | heuristic | auto
+    // WEAVE_LLM_PROVIDER = ollama | claude | heuristic | auto | grok | openai
     let provider = std::env::var("WEAVE_LLM_PROVIDER").unwrap_or_else(|_| "ollama".into());
     let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
@@ -79,6 +80,24 @@ async fn main() -> anyhow::Result<()> {
             Some(key) => Arc::new(ClaudeLlm::new(key, llm_model())),
             None => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
         },
+        "grok" | "openai" => {
+            let openai_key = std::env::var("OPENAI_API_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty());
+            match openai_key {
+                Some(key) => {
+                    let base_url = std::env::var("OPENAI_BASE_URL")
+                        .unwrap_or_else(|_| "https://api.openai.com/v1".into());
+                    let model = std::env::var("OPENAI_MODEL")
+                        .unwrap_or_else(|_| "gpt-4o-mini".into());
+                    Arc::new(OpenaiLlm::new(base_url, model, key))
+                }
+                None => {
+                    tracing::warn!("provider={provider} but OPENAI_API_KEY unset; using heuristic");
+                    Arc::new(HeuristicLlm::new())
+                }
+            }
+        }
         _ => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
     };
     // Embeddings — real semantic (Ollama nomic) by default, hash fallback.

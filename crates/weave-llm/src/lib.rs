@@ -14,12 +14,14 @@ mod embed;
 mod embed_ollama;
 mod heuristic;
 mod ollama;
+mod openai;
 
 pub use claude::ClaudeLlm;
 pub use embed::HashEmbedder;
 pub use embed_ollama::OllamaEmbedder;
 pub use heuristic::HeuristicLlm;
 pub use ollama::OllamaLlm;
+pub use openai::OpenaiLlm;
 
 /// A fact as proposed by extraction, before it gets an id / embedding.
 #[derive(Debug, Clone, Serialize, Deserialize)]

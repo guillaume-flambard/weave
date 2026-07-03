@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { askMemory, approveAgent as approveAgentRequest, API, getAgents, getFacts, getHealth, getOrgConfig, getPresets, getSkills, injectMessage, loadOrg, resetProject, simulateOrg } from "../lib/api";
-import type { Agent, Answer, Fact, Feed, OrgCfg, Skill } from "../lib/types";
+import { askMemory, approveAgent as approveAgentRequest, API, getAgents, getFacts, getHealth, getOrgConfig, getPresets, getSkills, getStats, injectMessage, loadOrg, resetProject, simulateOrg } from "../lib/api";
+import type { Agent, Answer, Fact, Feed, OrgCfg, Skill, WeaveStats } from "../lib/types";
+import type { Scope } from "../lib/scope";
 
-export type Scope = { team?: string; workstream?: string };
+export type { Scope };
 export type Flash = { msg: string; kind: "skill" | "agent" | "org" } | null;
 
 export function useWeaveDashboard(notifySkillEmerged: () => void) {
@@ -29,6 +30,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const [injectText, setInjectText] = useState("");
   const [pendingAction, setPendingAction] = useState<"simulate" | "reset" | "ask" | "inject" | "approveAgent" | "switchOrg" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [simProgress, setSimProgress] = useState<{ events: number; facts: number; target: number; skills: number } | null>(null);
 
   const normalizeError = (error: unknown) => {
     if (error instanceof Error) {
@@ -126,14 +128,40 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const simulate = useCallback(async () => {
     setPendingAction("simulate");
     setErrorMessage(null);
+    setSimProgress(null);
     try {
-      await simulateOrg(orgId);
+      const initial = await getStats(orgId);
+      const res = await simulateOrg(orgId) as { events?: number };
+      const target = res.events ?? 66;
+      setSimProgress({ events: initial.events, facts: initial.facts, target, skills: initial.skills.length });
     } catch (error) {
       setErrorMessage(normalizeError(error));
-    } finally {
       setPendingAction(null);
     }
   }, [orgId]);
+
+  const simProgressRef = useRef(simProgress);
+  simProgressRef.current = simProgress;
+  useEffect(() => {
+    if (!simProgressRef.current || pendingAction !== "simulate") return;
+    const interval = setInterval(async () => {
+      try {
+        const stats = await getStats(orgId);
+        const prev = simProgressRef.current;
+        if (!prev) return;
+        if (stats.events >= prev.target) {
+          setPendingAction(null);
+          setSimProgress(null);
+          refetch(orgId);
+          return;
+        }
+        setSimProgress({ ...prev, events: stats.events, facts: stats.facts, skills: stats.skills.length });
+      } catch {
+        // ignore polling errors during simulation
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [pendingAction, orgId, refetch]);
 
   const reset = useCallback(async () => {
     setPendingAction("reset");
@@ -211,6 +239,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     connected,
     llm,
     pendingAction,
+    simProgress,
     errorMessage,
     question,
     setQuestion,

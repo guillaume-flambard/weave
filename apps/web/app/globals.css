@@ -53,7 +53,21 @@
 .wv-pulse { animation: wvPulse 800ms cubic-bezier(0.22,1,0.36,1); }
 @keyframes wvSpin { to { transform: rotate(360deg); } }
 .wv-spin { animation: wvSpin 0.7s linear infinite; }
-@media (prefers-reduced-motion: reduce) { .wv-shimmer, .wv-pulse, .wv-spin { animation: none; } }
+@keyframes wvFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.wv-fade-in { animation: wvFadeIn 300ms ease-out both; }
+@keyframes wvSlideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.wv-slide-up { animation: wvSlideUp 350ms ease-out both; }
+@keyframes wvScaleIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.wv-scale-in { animation: wvScaleIn 200ms ease-out both; }
+@keyframes wvSlideInRight { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+.wv-slide-in-right { animation: wvSlideInRight 250ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .wv-shimmer, .wv-pulse, .wv-spin,
+  .animate-emerge, .weave-emerge,
+  .wv-fade-in, .wv-slide-up, .wv-scale-in, .wv-slide-in-right {
+    animation: none;
+  }
+}
 
 html,
 body {
@@ -75,6 +89,9 @@ body {
   100% { transform: scale(1); opacity: 1; }
 }
 .animate-emerge {
+  animation: emerge 800ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.weave-emerge {
   animation: emerge 800ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 

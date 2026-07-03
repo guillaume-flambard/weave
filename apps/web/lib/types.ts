@@ -94,3 +94,13 @@ export type OrgCfg = {
   name: string;
   teams: TeamCfg[];
 };
+
+export type WeaveStats = {
+  events: number;
+  facts: number;
+  entities: number;
+  relationships: number;
+  skills: string[];
+  agents: { name: string; status: string }[];
+  llm?: string;
+};

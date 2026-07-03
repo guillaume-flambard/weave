@@ -1,20 +1,8 @@
-import type { OrgCfg, Project, TeamCfg } from "../lib/types";
-import type { Scope } from "../hooks/use-weave-dashboard";
+import type { OrgCfg, TeamCfg, Project } from "../lib/types";
+import type { Scope } from "../lib/scope";
+import { getScopeLabel, slug } from "../lib/scope";
 
-function slug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-export function getScopeLabel(org: OrgCfg | null, scope: Scope) {
-  return scope.workstream
-    ? org?.teams.flatMap((t: TeamCfg) => t.projects).find((p: Project) => slug(p.name) === scope.workstream)?.name
-    : scope.team
-    ? org?.teams.find((t: TeamCfg) => slug(t.name) === scope.team)?.name
-    : "Toute l'organisation";
-}
+export { getScopeLabel };
 
 export function ScopeBar({ org, scope, setScope, scopeLabel }: { org: OrgCfg | null; scope: Scope; setScope: (scope: Scope) => void; scopeLabel: string; }) {
   return (

@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Sparkles, Building2, Zap, FileText, Brain, Route, Users, TrendingUp, Shield,
   Pin, Flag, Copy, Check,
 } from "lucide-react";
 import { Button, Badge, Avatar, StatusIndicator } from "../../components/ui/primitives";
 import { Panel, ProgressBar } from "../../components/ui/workspace-ui";
+import { WeaveShell } from "../../components/layout/weave-shell";
+import { useWeaveProject } from "../../hooks/use-weave-project";
+import { useViewport } from "../../hooks/use-viewport";
 
 // Compétence — skill detail, ported from Claude Design (Compétence.dc.html).
 // Trigger, body (copy), sources, provenance/promotion stepper, referents,
@@ -47,14 +51,17 @@ const REFERENTS = ["nicolas", "arthur", "camille"];
 const CONSUMERS = [{ name: "assistant", count: 14 }, { name: "specialiste-data-finance-ops", count: 11 }, { name: "sarah", count: 6 }];
 const SPARK = "M0,27 L8,25 L15,26 L23,21 L31,22 L38,18 L46,17 L54,14 L62,15 L69,11 L77,10 L85,7 L92,6 L100,3";
 
-function useViewport() {
-  const [w, setW] = useState(1440);
-  useEffect(() => { const on = () => setW(window.innerWidth); on(); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
-  return w;
+function useViewportWidth() {
+  const { width } = useViewport();
+  return width;
 }
 
-export default function CompetencePage() {
-  const w = useViewport();
+function CompetencePageInner() {
+  const w = useViewportWidth();
+  const weave = useWeaveProject();
+  const params = useSearchParams();
+  const skillName = params.get("name");
+  const skill = weave.skills.find((s) => s.name === skillName) ?? weave.skills[0] ?? null;
   const [view, setView] = useState<View>("promue");
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -72,27 +79,39 @@ export default function CompetencePage() {
   }, []);
   useEffect(() => () => clearTimeout(copyT.current), []);
 
-  const twoCol = w >= 1024;
   const isNarrow = w < 768;
-  const isProject = view === "projet";
-  const level: Level = isProject ? "project" : "organization";
-  const levelLabel = isProject ? "Project" : "Organization";
+  const isProject = skill ? skill.memory_level === "project" : view === "projet";
+  const level: Level = skill ? (skill.memory_level as Level) : isProject ? "project" : "organization";
+  const levelLabel = level === "organization" ? "Organization" : level === "project" ? "Project" : level === "team" ? "Team" : "Personal";
+  const bodyText = skill?.body ?? BODY;
+  const displayName = skill?.name ?? SKILL.name;
+  const triggers = skill ? [skill.trigger] : SKILL.triggers;
+  const referents = skill?.referents ?? REFERENTS;
   const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  const onCopy = () => { try { navigator.clipboard?.writeText(BODY); } catch { /* noop */ } setCopied(true); clearTimeout(copyT.current); copyT.current = setTimeout(() => setCopied(false), 1600); };
+  const onCopy = () => { try { navigator.clipboard?.writeText(bodyText); } catch { /* noop */ } setCopied(true); clearTimeout(copyT.current); copyT.current = setTimeout(() => setCopied(false), 1600); };
+
+  if (!weave.loading && !skill && view !== "chargement") {
+    return (
+      <Shell w={w}>
+        <div className="max-w-[1360px] mx-auto p-6 text-center">
+          <p className="text-ink-soft">Aucune compétence — simulez l&apos;activité sur l&apos;<a href="/">espace de travail</a>.</p>
+        </div>
+      </Shell>
+    );
+  }
 
   const collapseBody = isNarrow && !expanded;
-  const bodyGrid = { display: "grid", gridTemplateColumns: twoCol ? "minmax(0,2fr) minmax(0,1fr)" : "minmax(0,1fr)", gap: 16, alignItems: "start" as const };
 
   if (view === "introuvable") {
     return (
       <Shell w={w}>
-        <div style={{ maxWidth: 1360, margin: "0 auto", padding: 24, display: "flex", justifyContent: "center" }}>
-          <div style={{ maxWidth: 440, width: "100%", textAlign: "center", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: "32px 28px", marginTop: 32, boxSizing: "border-box" }}>
-            <svg viewBox="0 0 100 100" width="44" height="44" fill="none" style={{ display: "block", margin: "0 auto", opacity: 0.55 }}><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="var(--ink)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="6" fill="var(--accent)" /></svg>
-            <div style={{ marginTop: 16, fontSize: 16, fontWeight: 600 }}>Compétence introuvable</div>
-            <div style={{ marginTop: 6, fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>Cette compétence n&apos;existe pas ou a été fusionnée avec une autre. Elle n&apos;apparaît plus dans la mémoire de l&apos;organisation.</div>
-            <div style={{ marginTop: 18, display: "flex", justifyContent: "center" }}><a href="/espace-de-travail" style={{ textDecoration: "none" }}><Button variant="secondary">← Retour aux compétences</Button></a></div>
+        <div className="max-w-[1360px] mx-auto p-6 flex justify-center">
+          <div className="max-w-[440px] w-full text-center border border-line rounded-lg bg-surface p-[32px_28px] mt-8 box-border">
+            <svg viewBox="0 0 100 100" width="44" height="44" fill="none" className="block mx-auto opacity-55"><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="var(--ink)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="6" fill="var(--accent)" /></svg>
+            <div className="mt-4 text-[16px] font-semibold">Compétence introuvable</div>
+            <div className="mt-1.5 text-sm text-ink-soft leading-relaxed">Cette compétence n&apos;existe pas ou a été fusionnée avec une autre. Elle n&apos;apparaît plus dans la mémoire de l&apos;organisation.</div>
+            <div className="mt-[18px] flex justify-center"><a href="/espace-de-travail" className="no-underline"><Button variant="secondary">← Retour aux compétences</Button></a></div>
           </div>
         </div>
       </Shell>
@@ -101,74 +120,74 @@ export default function CompetencePage() {
 
   return (
     <Shell w={w}>
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 24px 64px" }}>
-        <nav aria-label="Fil d'ariane" style={{ padding: "16px 0 0", display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--muted)" }}>
-          <a href="/espace-de-travail" style={{ color: "var(--muted)", textDecoration: "none" }}>Compétences</a><span>/</span>
-          <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>{SKILL.name}</span>
+      <div className="max-w-[1360px] mx-auto px-6 pb-16">
+        <nav aria-label="Fil d'ariane" className="pt-4 flex items-center gap-[7px] text-[12.5px] text-muted">
+          <a href="/espace-de-travail" className="text-muted no-underline">Compétences</a><span>/</span>
+          <span className="font-mono text-ink-soft">{displayName}</span>
         </nav>
 
         {/* sticky header */}
-        <div style={{ position: "sticky", top: 0, zIndex: 20, background: "var(--bg)", padding: collapsed ? "12px 0" : "18px 0 20px", borderBottom: collapsed ? "1px solid var(--line)" : "1px solid transparent", marginBottom: 16, transition: "padding 150ms ease" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                {isProject ? <Sparkles size={17} color="var(--accent)" style={{ flexShrink: 0 }} /> : <Building2 size={17} color="var(--lvl-org)" style={{ flexShrink: 0 }} />}
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 17, fontWeight: 600, color: "var(--ink)", wordBreak: "break-word" }}>{SKILL.name}</span>
+        <div className="sticky top-0 z-20 bg-bg mb-4" style={{ padding: collapsed ? "12px 0" : "18px 0 20px", borderBottom: collapsed ? "1px solid var(--line)" : "1px solid transparent", transition: "padding 150ms ease" }}>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {isProject ? <Sparkles size={17} className="shrink-0 text-accent" /> : <Building2 size={17} className="shrink-0 text-lvl-org" />}
+                <span className="font-mono text-lg font-semibold text-ink break-words">{displayName}</span>
                 <Badge tone={level}>{levelLabel}</Badge>
               </div>
               {!collapsed && (
                 <>
-                  <div style={{ marginTop: 8, fontSize: 15, color: "var(--ink)", fontWeight: 500 }}>{SKILL.title}</div>
-                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12, color: "var(--muted)" }}>
+                  <div className="mt-2 text-base text-ink font-medium">{SKILL.title}</div>
+                  <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-muted">
                     <span>créée le {SKILL.created}</span><span>·</span><span>dernière évolution {SKILL.evolved}</span><span>·</span><span>{SKILL.team}</span>
                   </div>
                 </>
               )}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              {!collapsed && <Button variant="secondary" size="md">Voir la provenance</Button>}
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              {!collapsed && !isNarrow && <Button variant="secondary" size="md">Voir la provenance</Button>}
               <Button variant="primary" size="md" icon={<Sparkles size={15} />}>Utiliser dans une réponse</Button>
             </div>
           </div>
         </div>
 
         {view === "chargement" ? (
-          <div style={bodyGrid}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {[40, 180, 128].map((h, i) => <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 16, background: "var(--surface)" }}><div className="wv-shimmer" style={{ height: 14, width: "34%" }} /><div className="wv-shimmer" style={{ height: h, marginTop: 14 }} /></div>)}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 items-start">
+            <div className="flex flex-col gap-4">
+              {[40, 180, 128].map((h, i) => <div key={i} className="border border-line rounded-lg p-4 bg-surface"><div className="wv-shimmer h-3.5 w-[34%]" /><div className="wv-shimmer" style={{ height: h, marginTop: 14 }} /></div>)}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {[120, 60].map((h, i) => <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 16, background: "var(--surface)" }}><div className="wv-shimmer" style={{ height: h }} /></div>)}
+            <div className="flex flex-col gap-4">
+              {[120, 60].map((h, i) => <div key={i} className="border border-line rounded-lg p-4 bg-surface"><div className="wv-shimmer" style={{ height: h }} /></div>)}
             </div>
           </div>
         ) : (
-          <div style={bodyGrid}>
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 items-start">
             {/* LEFT */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+            <div className="flex flex-col gap-4 min-w-0">
               <Panel title="Déclencheur" icon={<Zap size={15} strokeWidth={2} />} subtitle="Les formulations qui routent une question vers cette compétence.">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div className="flex flex-wrap gap-2">
                   {SKILL.triggers.map((t) => (
-                    <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--line)", background: "var(--subtle)", borderRadius: 999, padding: "5px 12px", fontSize: 12.5, color: "var(--ink-soft)" }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)" }} />« {t} »
+                    <span key={t} className="inline-flex items-center gap-1.5 border border-line bg-subtle rounded-full p-[5px_12px] text-[12.5px] text-ink-soft">
+                      <span className="w-[5px] h-[5px] rounded-full bg-accent" />« {t} »
                     </span>
                   ))}
                 </div>
               </Panel>
 
               <Panel title="Contenu de la compétence" icon={<FileText size={15} strokeWidth={2} />} actions={<Button variant="ghost" size="sm" icon={copied ? <Check size={14} /> : <Copy size={14} />} onClick={onCopy}>{copied ? "Copié" : "Copier"}</Button>}>
-                <pre className="wv-scroll" style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", borderRadius: 6, border: "1px solid var(--line)", background: "var(--subtle)", padding: 14, fontSize: 12.5, lineHeight: 1.65, color: "var(--ink-soft)", fontFamily: "var(--font-mono)", maxHeight: collapseBody ? 220 : "none", overflowY: collapseBody ? "hidden" : "visible" }}>{BODY}</pre>
-                {isNarrow && <div style={{ marginTop: 10 }}><button type="button" onClick={() => setExpanded((e) => !e)} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", color: "var(--accent)", fontFamily: "var(--font-sans)", fontSize: 12.5, fontWeight: 500 }}>{expanded ? "Afficher moins" : "Afficher tout le contenu"}</button></div>}
+                <pre className="wv-scroll m-0 whitespace-pre-wrap break-words rounded-md border border-line bg-subtle p-3.5 text-[12.5px] leading-relaxed text-ink-soft font-mono" style={{ maxHeight: collapseBody ? 220 : "none", overflowY: collapseBody ? "hidden" : "visible" }}>{bodyText}</pre>
+                {isNarrow && <div className="mt-2.5"><button type="button" onClick={() => setExpanded((e) => !e)} className="border-0 bg-transparent p-0 cursor-pointer text-accent font-sans text-[12.5px] font-medium">{expanded ? "Afficher moins" : "Afficher tout le contenu"}</button></div>}
               </Panel>
 
               <Panel title="Sources" icon={<Brain size={15} strokeWidth={2} />} count={SOURCES.length} subtitle="Les faits et messages dont cette compétence a émergé.">
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="flex flex-col gap-2">
                   {SOURCES.map((s, i) => (
-                    <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "11px 12px", background: "var(--surface)" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    <div key={i} className="border border-line rounded-lg p-[11px_12px] bg-surface">
+                      <div className="flex items-center gap-[7px] flex-wrap">
                         <Badge tone={s.level}>{s.levelLabel}</Badge>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>{s.workstream} · {s.author} · {s.time}</span>
+                        <span className="text-[11px] text-muted">{s.workstream} · {s.author} · {s.time}</span>
                       </div>
-                      <div style={{ marginTop: 5, fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.45 }}>« {s.snippet} »</div>
+                      <div className="mt-[5px] text-sm text-ink-soft leading-relaxed">« {s.snippet} »</div>
                     </div>
                   ))}
                 </div>
@@ -176,9 +195,9 @@ export default function CompetencePage() {
             </div>
 
             {/* RIGHT RAIL */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+            <div className="flex flex-col gap-4 min-w-0">
               <Panel title="Provenance & promotion" icon={<Route size={15} strokeWidth={2} />}>
-                <div style={{ display: "flex", flexDirection: "column" }}>
+                <div className="flex flex-col">
                   <Step dot="var(--lvl-project)" line label="Née dans le projet" detail="Synchro bancaire" />
                   <Step dot="var(--lvl-project)" line label="Observée aussi dans" detail="Checkout" />
                   {isProject ? (
@@ -190,30 +209,30 @@ export default function CompetencePage() {
               </Panel>
 
               <Panel title="Référents" icon={<Users size={15} strokeWidth={2} />} subtitle="Les personnes qui ancrent cette compétence.">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div className="flex flex-wrap gap-2">
                   {REFERENTS.map((r) => (
-                    <span key={r} style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px solid var(--line)", borderRadius: 999, padding: "3px 10px 3px 3px", background: "var(--surface)" }}>
-                      <Avatar name={r} size="sm" /><span style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>{r}</span>
+                    <span key={r} className="inline-flex items-center gap-[7px] border border-line rounded-full p-[3px_10px_3px_3px] bg-surface">
+                      <Avatar name={r} size="sm" /><span className="text-[12.5px] text-ink-soft">{r}</span>
                     </span>
                   ))}
                 </div>
               </Panel>
 
               <Panel title="Utilisation" icon={<TrendingUp size={15} strokeWidth={2} />}>
-                <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+                <div className="flex items-end justify-between gap-3">
                   <div>
-                    <div style={{ fontSize: 26, fontWeight: 600, color: "var(--ink)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>34<span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 400 }}>×</span></div>
-                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--accent-deep)", display: "inline-flex", alignItems: "center", gap: 3 }}><TrendingUp size={12} strokeWidth={2.4} />12 cette semaine</div>
+                    <div className="text-[26px] font-semibold text-ink leading-none tabular-nums">34<span className="text-sm text-muted font-normal">×</span></div>
+                    <div className="mt-1.5 text-xs text-accent-deep inline-flex items-center gap-[3px]"><TrendingUp size={12} strokeWidth={2.4} />12 cette semaine</div>
                   </div>
-                  <svg viewBox="0 0 100 30" preserveAspectRatio="none" style={{ width: 120, height: 40, flexShrink: 0, overflow: "visible" }}><path d={SPARK} fill="none" stroke="#2383e2" strokeWidth="1.75" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-[120px] h-10 shrink-0 overflow-visible"><path d={SPARK} fill="none" stroke="#2383e2" strokeWidth="1.75" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
-                <div style={{ marginTop: 14, borderTop: "1px solid var(--line-soft)", paddingTop: 12 }}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 500, marginBottom: 8 }}>Principaux consommateurs</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <div className="mt-3.5 border-t border-line pt-3">
+                  <div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-2">Principaux consommateurs</div>
+                  <div className="flex flex-col gap-[7px]">
                     {CONSUMERS.map((c) => (
-                      <div key={c.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                        <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{c.count}×</span>
+                      <div key={c.name} className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs text-ink-soft truncate">{c.name}</span>
+                        <span className="text-xs text-muted tabular-nums shrink-0">{c.count}×</span>
                       </div>
                     ))}
                   </div>
@@ -221,11 +240,11 @@ export default function CompetencePage() {
               </Panel>
 
               <Panel title="Gouvernance" icon={<Shield size={15} strokeWidth={2} />}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Statut</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted">Statut</span>
                   <Badge tone="active">{isProject ? "active" : "promue"}</Badge>
                 </div>
-                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div className="mt-3 flex gap-2 flex-wrap">
                   <Button variant="secondary" size="sm" icon={<Pin size={14} />}>Épingler</Button>
                   <Button variant="ghost" size="sm" icon={<Flag size={14} />}>Signaler / corriger</Button>
                 </div>
@@ -236,59 +255,47 @@ export default function CompetencePage() {
       </div>
 
       {copied && (
-        <div role="status" aria-live="polite" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 60, display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 8, background: "var(--ink)", color: "#fff", fontSize: 13, boxShadow: "0 4px 14px rgba(15,15,15,0.16)" }}><Check size={15} />Contenu copié</div>
+        <div role="status" aria-live="polite" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-60 flex items-center gap-2 rounded-lg bg-ink text-white text-sm" style={{ padding: "9px 14px", boxShadow: "0 4px 14px rgba(15,15,15,0.16)" }}><Check size={15} />Contenu copié</div>
       )}
     </Shell>
   );
 }
 
+export default function CompetencePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg" />}>
+      <CompetencePageInner />
+    </Suspense>
+  );
+}
+
 function Shell({ w, children }: { w: number; children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-sans)", color: "var(--ink)", WebkitFontSmoothing: "antialiased", boxSizing: "border-box" }}>
-      <div style={{ borderBottom: "1px solid var(--line)" }}>
-        <header style={{ maxWidth: 1360, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14 }}>
-          <a href="/" style={{ display: "flex", alignItems: "center", gap: 11, flexShrink: 0, textDecoration: "none" }}>
-            <span style={{ width: 32, height: 32, borderRadius: 7, background: "var(--ink)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <svg viewBox="0 0 100 100" width="18" height="18" fill="none"><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="#fff" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="7" fill="var(--accent)" /></svg>
-            </span>
-            <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>Weave</span>
-          </a>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {w >= 560 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface)", boxSizing: "border-box" }}>
-                <StatusIndicator connected labelConnected="en direct" />
-                <span style={{ width: 1, height: 14, background: "var(--line)" }} />
-                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Ollama (local)</span>
-              </div>
-            )}
-            <Avatar name="Sophie Bernard" size="md" />
-          </div>
-        </header>
-      </div>
+    <WeaveShell width={w} connected llm="Ollama (local)">
       {children}
-    </div>
+    </WeaveShell>
   );
 }
 
 function Step({ dot, ring, line = false, last = false, label, detail, muted = false, promoted = false, pulse = false, progress }:
   { dot: string; ring?: string; line?: boolean; last?: boolean; label: string; detail: string; muted?: boolean; promoted?: boolean; pulse?: boolean; progress?: { occ: number; thr: number } }) {
   return (
-    <div style={{ display: "flex", gap: 12 }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-        <span style={{ width: 12, height: 12, borderRadius: "50%", background: dot, border: ring ? `3px solid ${ring}` : `2px solid ${dot}`, boxSizing: "border-box", flexShrink: 0 }} />
-        {line && <span style={{ width: 2, flex: 1, minHeight: 26, background: "var(--line)" }} />}
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center shrink-0">
+        <span className="w-3 h-3 rounded-full shrink-0 box-border" style={{ background: dot, border: ring ? `3px solid ${ring}` : `2px solid ${dot}` }} />
+        {line && <span className="w-0.5 flex-1 min-h-[26px] bg-line" />}
       </div>
-      <div style={{ paddingBottom: last ? 0 : 18, minWidth: 0, flex: 1 }}>
+      <div className="min-w-0 flex-1" style={{ paddingBottom: last ? 0 : 18 }}>
         {promoted ? (
           <div className={pulse ? "wv-pulse" : undefined} style={{ border: "1px solid color-mix(in srgb, var(--lvl-org) 40%, transparent)", background: "var(--lvl-org-bg)", borderRadius: 8, padding: "9px 11px" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--lvl-org)" }}>{label}</div>
-            <div style={{ marginTop: 3, fontSize: 12, color: "var(--ink-soft)" }}>{detail}</div>
+            <div className="text-[12.5px] font-semibold text-lvl-org">{label}</div>
+            <div className="mt-[3px] text-xs text-ink-soft">{detail}</div>
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 12.5, fontWeight: 500, color: muted ? "var(--muted)" : "var(--ink)" }}>{label}</div>
-            <div style={{ marginTop: 2, fontSize: 12, color: "var(--muted)" }}>{detail}</div>
-            {progress && <div style={{ marginTop: 8, maxWidth: 200 }}><ProgressBar occurrences={progress.occ} threshold={progress.thr} /></div>}
+            <div className="text-[12.5px] font-medium" style={{ color: muted ? "var(--muted)" : "var(--ink)" }}>{label}</div>
+            <div className="mt-0.5 text-xs text-muted">{detail}</div>
+            {progress && <div className="mt-2 max-w-[200px]"><ProgressBar occurrences={progress.occ} threshold={progress.thr} /></div>}
           </>
         )}
       </div>

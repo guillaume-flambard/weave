@@ -5,8 +5,11 @@ import {
   MessagesSquare, GitBranch, FileText, NotebookText, SquareKanban, Plus, Zap, Upload,
   Lock, Shield, X, Check, LoaderCircle,
 } from "lucide-react";
+import { WeaveShell } from "../../components/layout/weave-shell";
 import { Button, Badge, Avatar, StatusIndicator } from "../../components/ui/primitives";
 import { Select } from "../../components/ui/workspace-ui";
+import { ingestSlack } from "../../lib/api";
+import { useWeaveProject } from "../../hooks/use-weave-project";
 
 // Connecter les sources — ported from Claude Design (Connecter les sources.dc.html).
 // Connector grid + read-only scoped config drawer/modal/sheet. State via
@@ -47,6 +50,7 @@ function useViewport() {
 
 export default function ConnecterLesSourcesPage() {
   const w = useViewport();
+  const weave = useWeaveProject();
   const [view, setView] = useState<View>("normal");
   const [override, setOverride] = useState<Record<string, Status>>({});
   const [drawer, setDrawer] = useState<string | null>(null);
@@ -66,7 +70,6 @@ export default function ConnecterLesSourcesPage() {
 
   const isLoading = view === "chargement";
   const isVierge = view === "vierge";
-  const cols = w >= 900 ? 3 : w >= 620 ? 2 : 1;
   const drawerMode = w >= 1200 ? "drawer" : w >= 768 ? "modal" : "sheet";
 
   const baseStatus = (id: string): Status => {
@@ -77,15 +80,37 @@ export default function ConnecterLesSourcesPage() {
   const isSel = (id: string, i: number) => { const k = `${id}:${i}`; return k in sel ? sel[k] : true; };
   const flash = (msg: string) => { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(null), 4200); };
 
-  const onSave = () => {
-    const id = drawer!; setDrawerBusy(true);
-    clearTimeout(t.current);
-    t.current = setTimeout(() => { setOverride((o) => ({ ...o, [id]: "connected" })); setDrawerBusy(false); setDrawer(null); flash(`La mémoire commence à se construire à partir de ${name(id)}.`); }, 900);
+  const onSave = async () => {
+    const id = drawer!;
+    setDrawerBusy(true);
+    try {
+      if (id === "slack") {
+        await ingestSlack(weave.orgId);
+      }
+      setOverride((o) => ({ ...o, [id]: "connected" }));
+      setDrawer(null);
+      flash(`La mémoire commence à se construire à partir de ${name(id)}.`);
+      await weave.refresh();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : "Erreur lors de la connexion");
+    } finally {
+      setDrawerBusy(false);
+    }
   };
-  const reconnect = (id: string) => {
+  const reconnect = async (id: string) => {
     setBusy((b) => ({ ...b, [id]: true }));
-    clearTimeout(t.current);
-    t.current = setTimeout(() => { setOverride((o) => ({ ...o, [id]: "connected" })); setBusy((b) => ({ ...b, [id]: false })); flash(`${name(id)} reconnecté · synchronisation reprise.`); }, 900);
+    try {
+      if (id === "slack") {
+        await ingestSlack(weave.orgId);
+      }
+      setOverride((o) => ({ ...o, [id]: "connected" }));
+      flash(`${name(id)} reconnecté · synchronisation reprise.`);
+      await weave.refresh();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : "Échec de la synchronisation");
+    } finally {
+      setBusy((b) => ({ ...b, [id]: false }));
+    }
   };
   const name = (id: string) => CONNECTORS.find((c) => c.id === id)?.name ?? "";
 
@@ -95,79 +120,59 @@ export default function ConnecterLesSourcesPage() {
   const dTeamLabel = TEAM_OPTIONS.find((o) => o.value === dTeam)?.label ?? "";
   const drawerPreview = selCount === 0 ? "Aucun élément sélectionné — rien ne sera ingéré." : `Weave lira ${selCount} élément${selCount > 1 ? "s" : ""} → ~${selCount * 180} messages/semaine ajoutés à la mémoire de ${dTeamLabel}, en lecture seule.`;
 
-  const panelBase: CSSProperties = { position: "fixed", zIndex: 51, background: "var(--surface)", boxShadow: "0 8px 28px rgba(15,15,15,0.18)", display: "flex", flexDirection: "column", boxSizing: "border-box" };
-  const panelStyle: CSSProperties = drawerMode === "drawer"
-    ? { ...panelBase, top: 0, right: 0, bottom: 0, width: 420, borderLeft: "1px solid var(--line)" }
+  const panelClasses = "fixed z-[51] bg-surface flex flex-col box-border";
+  const modeClasses = drawerMode === "drawer"
+    ? "top-0 right-0 bottom-0 w-[420px] border-l border-line"
     : drawerMode === "modal"
-    ? { ...panelBase, top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "min(560px, 92vw)", maxHeight: "86vh", borderRadius: 10, border: "1px solid var(--line)" }
-    : { ...panelBase, inset: 0 };
+    ? "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,92vw)] max-h-[86vh] rounded-xl border border-line"
+    : "inset-0";
+  const panelShadow: CSSProperties = { boxShadow: "0 8px 28px rgba(15,15,15,0.18)" };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-sans)", color: "var(--ink)", WebkitFontSmoothing: "antialiased", boxSizing: "border-box" }}>
-      <div style={{ borderBottom: "1px solid var(--line)" }}>
-        <header style={{ maxWidth: 1200, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14 }}>
-          <a href="/" style={{ display: "flex", alignItems: "center", gap: 11, flexShrink: 0, textDecoration: "none" }}>
-            <span style={{ width: 32, height: 32, borderRadius: 7, background: "var(--ink)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <svg viewBox="0 0 100 100" width="18" height="18" fill="none"><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="#fff" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="7" fill="var(--accent)" /></svg>
-            </span>
-            <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>Weave</span>
-          </a>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {w >= 560 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface)", boxSizing: "border-box" }}>
-                <StatusIndicator connected labelConnected="en direct" />
-                <span style={{ width: 1, height: 14, background: "var(--line)" }} />
-                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Ollama (local)</span>
-              </div>
-            )}
-            <Avatar name="Sophie Bernard" size="md" />
-          </div>
-        </header>
-      </div>
-
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px 64px" }}>
-        <div style={{ padding: "24px 0 6px" }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>Connecter vos sources</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55, maxWidth: 640 }}>Weave lit l&apos;activité IA de vos outils pour construire la mémoire — en lecture seule, scopée par équipe. Rien n&apos;est réécrit dans vos outils.</p>
+    <WeaveShell width={w} connected llm="Ollama (local)">
+      <div className="max-w-[1200px] mx-auto px-6 pb-16">
+        <div className="pt-6 pb-1.5">
+          <h1 className="m-0 text-2xl font-semibold tracking-tight">Connecter vos sources</h1>
+          <p className="mt-2 text-sm text-ink-soft leading-[1.55] max-w-[640px]">Weave lit l&apos;activité IA de vos outils pour construire la mémoire — en lecture seule, scopée par équipe. Rien n&apos;est réécrit dans vos outils.</p>
         </div>
 
         {isVierge && (
-          <div style={{ marginTop: 16, border: "1px solid color-mix(in srgb, var(--accent) 25%, var(--line))", borderRadius: 8, background: "var(--accent-soft)", padding: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <svg viewBox="0 0 100 100" width="36" height="36" fill="none" style={{ flexShrink: 0 }}><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="var(--ink)" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="7" fill="var(--accent)" /></svg>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Aucune source connectée pour l&apos;instant</div>
-              <div style={{ marginTop: 3, fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>Connectez un outil ci-dessous, ou simulez des données de démo pour explorer Weave sans identifiants.</div>
+          <div className="mt-4 border border-[color-mix(in_srgb,var(--accent)_25%,var(--line))] rounded-lg bg-accent-soft p-[18px] flex items-center gap-3.5 flex-wrap">
+            <svg viewBox="0 0 100 100" width="36" height="36" fill="none" className="shrink-0"><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="var(--ink)" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="7" fill="var(--accent)" /></svg>
+            <div className="flex-1 min-w-[200px]">
+              <div className="text-sm font-semibold text-ink">Aucune source connectée pour l&apos;instant</div>
+              <div className="mt-[3px] text-[13px] text-ink-soft leading-[1.5]">Connectez un outil ci-dessous, ou simulez des données de démo pour explorer Weave sans identifiants.</div>
             </div>
-            <a href="/espace-de-travail" style={{ textDecoration: "none" }}><Button variant="primary" size="md" icon={<Zap size={15} />}>Simuler des données de démo</Button></a>
+            <a href="/espace-de-travail" className="no-underline"><Button variant="primary" size="md" icon={<Zap size={15} />}>Simuler des données de démo</Button></a>
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gap: 14, marginTop: 20 }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-5">
           {isLoading ? [0, 1, 2].map((i) => (
-            <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 16, background: "var(--surface)" }}>
-              <div className="wv-shimmer" style={{ height: 40, width: 40, borderRadius: 8 }} /><div className="wv-shimmer" style={{ height: 14, width: "50%", marginTop: 14 }} /><div className="wv-shimmer" style={{ height: 12, width: "75%", marginTop: 8 }} /><div className="wv-shimmer" style={{ height: 32, marginTop: 16 }} />
+            <div key={i} className="border border-line rounded-lg p-4 bg-surface">
+              <div className="wv-shimmer h-10 w-10 rounded-lg" /><div className="wv-shimmer h-3.5 w-1/2 mt-3.5" /><div className="wv-shimmer h-3 w-3/4 mt-2" /><div className="wv-shimmer h-8 mt-4" />
             </div>
           )) : CONNECTORS.map((c) => {
             const st = status(c.id);
             const connected = st === "connected", errored = st === "error";
             return (
-              <div key={c.id} style={{ border: errored ? "1px solid color-mix(in srgb, var(--lvl-org) 40%, var(--line))" : "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: 16, display: "flex", flexDirection: "column" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <span style={{ width: 40, height: 40, borderRadius: 8, background: "var(--subtle)", color: TILE_COLOR[c.id], display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ConnectorIcon id={c.id} /></span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>{c.name}</span>
-                      {connected && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--lvl-team)" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--lvl-team)" }} />Connecté</span>}
-                      {errored && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--lvl-org)" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--lvl-org)" }} />Reconnexion requise</span>}
+              <div key={c.id} className="rounded-lg bg-surface p-4 flex flex-col" style={{ border: errored ? "1px solid color-mix(in srgb, var(--lvl-org) 40%, var(--line))" : "1px solid var(--line)" }}>
+                <div className="flex items-start gap-3">
+                  <span className="w-10 h-10 rounded-lg bg-subtle inline-flex items-center justify-center shrink-0" style={{ color: TILE_COLOR[c.id] }}><ConnectorIcon id={c.id} /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-[7px] flex-wrap">
+                      <span className="text-sm font-semibold text-ink">{c.name}</span>
+                      {connected && <span className="inline-flex items-center gap-1 text-[11px] text-lvl-team"><span className="w-[6px] h-[6px] rounded-full bg-lvl-team" />Connecté</span>}
+                      {errored && <span className="inline-flex items-center gap-1 text-[11px] text-lvl-org"><span className="w-[6px] h-[6px] rounded-full bg-lvl-org" />Reconnexion requise</span>}
                     </div>
-                    <div style={{ marginTop: 3, fontSize: 12.5, color: "var(--muted)", lineHeight: 1.4 }}>{c.role}</div>
+                    <div className="mt-[3px] text-[12.5px] text-muted leading-[1.4]">{c.role}</div>
                   </div>
                 </div>
 
-                {connected && <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--muted)", flexWrap: "wrap" }}><span>{c.items}</span><span>·</span><span>sync {c.lastSync}</span></div>}
-                {errored && <div style={{ marginTop: 12, fontSize: 12, color: "var(--lvl-org)", background: "var(--lvl-org-bg)", border: "1px solid color-mix(in srgb, var(--lvl-org) 40%, transparent)", borderRadius: 6, padding: "7px 9px", lineHeight: 1.4 }}>Le jeton a expiré — les {c.items} ne sont plus synchronisés.</div>}
+                {connected && <div className="mt-3 flex items-center gap-2 text-[11px] text-muted flex-wrap"><span>{c.items}</span><span>·</span><span>sync {c.lastSync}</span></div>}
+                {errored && <div className="mt-3 text-[12px] text-lvl-org bg-lvl-org-bg rounded-md p-[7px_9px] leading-[1.4]" style={{ border: "1px solid color-mix(in srgb, var(--lvl-org) 40%, transparent)" }}>Le jeton a expiré — les {c.items} ne sont plus synchronisés.</div>}
 
-                <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+                <div className="mt-3.5 flex gap-2">
                   {connected && <Button variant="secondary" size="sm" onClick={() => setDrawer(c.id)}>Gérer</Button>}
                   {errored && <Button variant="dark" size="sm" disabled={!!busy[c.id]} onClick={() => reconnect(c.id)}>{busy[c.id] ? "Reconnexion…" : "Reconnecter"}</Button>}
                   {st === "disconnected" && <Button variant="primary" size="sm" onClick={() => setDrawer(c.id)}>Connecter</Button>}
@@ -178,14 +183,14 @@ export default function ConnecterLesSourcesPage() {
           })}
         </div>
 
-        <div style={{ marginTop: 22, border: "1px solid var(--line)", borderRadius: 8, background: "var(--subtle)", padding: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>Pas d&apos;accès aux outils en direct ?</div>
-            <div style={{ marginTop: 2, fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.45 }}>Importez un export existant, ou simulez des données de démo pour évaluer Weave immédiatement.</div>
+        <div className="mt-[22px] border border-line rounded-lg bg-subtle p-4 flex items-center gap-3.5 flex-wrap">
+          <div className="flex-1 min-w-[220px]">
+            <div className="text-[13.5px] font-semibold text-ink">Pas d&apos;accès aux outils en direct ?</div>
+            <div className="mt-0.5 text-[12.5px] text-ink-soft leading-[1.45]">Importez un export existant, ou simulez des données de démo pour évaluer Weave immédiatement.</div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="flex gap-2 flex-wrap">
             <Button variant="secondary" size="md" icon={<Upload size={15} />}>Importer un export</Button>
-            <a href="/espace-de-travail" style={{ textDecoration: "none" }}><Button variant="dark" size="md" icon={<Zap size={15} />}>Simuler des données de démo</Button></a>
+            <a href="/espace-de-travail" className="no-underline"><Button variant="dark" size="md" icon={<Zap size={15} />}>Simuler des données de démo</Button></a>
           </div>
         </div>
       </div>
@@ -193,36 +198,36 @@ export default function ConnecterLesSourcesPage() {
       {/* CONFIG OVERLAY */}
       {dc && (
         <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,15,15,0.14)" }} onClick={() => setDrawer(null)} />
-          <div className="wv-scroll" role="dialog" aria-label="Configurer la source" style={panelStyle}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 18px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                <span style={{ width: 34, height: 34, borderRadius: 8, background: "var(--ink)", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 600, flexShrink: 0 }}>{dc.name.charAt(0)}</span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>Configurer {dc.name}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Choisissez les éléments et le rattachement.</div>
+          <div className="fixed inset-0 z-50 bg-black/15" onClick={() => setDrawer(null)} />
+          <div className={`wv-scroll ${panelClasses} ${modeClasses}`} role="dialog" aria-label="Configurer la source" style={panelShadow}>
+            <div className="flex items-center justify-between gap-3 p-4 px-[18px] border-b border-line shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-[34px] h-[34px] rounded-lg bg-ink text-white inline-flex items-center justify-center text-base font-semibold shrink-0">{dc.name.charAt(0)}</span>
+                <div className="min-w-0">
+                  <div className="text-base font-semibold text-ink">Configurer {dc.name}</div>
+                  <div className="text-[12px] text-muted">Choisissez les éléments et le rattachement.</div>
                 </div>
               </div>
-              <button type="button" onClick={() => setDrawer(null)} aria-label="Fermer" style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)", padding: 4, borderRadius: 6, flexShrink: 0 }}><X size={18} /></button>
+              <button type="button" onClick={() => setDrawer(null)} aria-label="Fermer" className="border-none bg-transparent cursor-pointer text-muted p-1 rounded-md shrink-0"><X size={18} /></button>
             </div>
 
-            <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)" }}>
-                <Lock size={16} color="var(--lvl-team)" style={{ flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--ink)" }}>Accès en lecture seule</div><div style={{ fontSize: 11, color: "var(--muted)" }}>Weave ne peut jamais écrire dans {dc.name}.</div></div>
+            <div className="p-[18px] overflow-y-auto flex-1">
+              <div className="flex items-center gap-2.5 p-[10px_12px] border border-line rounded-lg bg-surface">
+                <Lock size={16} color="var(--lvl-team)" className="shrink-0" />
+                <div className="flex-1 min-w-0"><div className="text-[12.5px] font-medium text-ink">Accès en lecture seule</div><div className="text-[11px] text-muted">Weave ne peut jamais écrire dans {dc.name}.</div></div>
                 <Badge tone="team">verrouillé</Badge>
               </div>
 
               {dc.things.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 500, marginBottom: 8 }}>{dc.itemsLabel}</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div className="mt-4">
+                  <div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-2">{dc.itemsLabel}</div>
+                  <div className="flex flex-col gap-1.5">
                     {dc.things.map((label, i) => {
                       const on = isSel(dc.id, i);
                       return (
-                        <button key={i} type="button" onClick={() => setSel((s) => ({ ...s, [`${dc.id}:${i}`]: !on }))} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, width: "100%", textAlign: "left", cursor: "pointer", border: `1px solid ${on ? "color-mix(in srgb, var(--accent) 35%, var(--line))" : "var(--line)"}`, background: on ? "var(--accent-soft)" : "var(--surface)", borderRadius: 6, padding: "9px 11px", transition: "background 120ms ease, border-color 120ms ease" }}>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "var(--ink)" }}>{label}</span>
-                          <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: on ? "var(--accent)" : "transparent", border: on ? "1px solid var(--accent)" : "1px solid var(--line)" }}>{on && <Check size={12} color="#fff" strokeWidth={3} />}</span>
+                        <button key={i} type="button" onClick={() => setSel((s) => ({ ...s, [`${dc.id}:${i}`]: !on }))} className="flex items-center justify-between gap-2 w-full text-left cursor-pointer rounded-md p-[9px_11px] transition-colors duration-120" style={{ border: `1px solid ${on ? "color-mix(in srgb, var(--accent) 35%, var(--line))" : "var(--line)"}`, background: on ? "var(--accent-soft)" : "var(--surface)" }}>
+                          <span className="font-mono text-[12.5px] text-ink">{label}</span>
+                          <span className="w-[18px] h-[18px] rounded-[5px] shrink-0 inline-flex items-center justify-center" style={{ background: on ? "var(--accent)" : "transparent", border: on ? "1px solid var(--accent)" : "1px solid var(--line)" }}>{on && <Check size={12} color="#fff" strokeWidth={3} />}</span>
                         </button>
                       );
                     })}
@@ -230,35 +235,35 @@ export default function ConnecterLesSourcesPage() {
                 </div>
               )}
 
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 500, marginBottom: 8 }}>Rattacher à</div>
+              <div className="mt-4">
+                <div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-2">Rattacher à</div>
                 <Select value={dTeam} onChange={(e) => setDrawerTeam((s) => ({ ...s, [dc.id]: e.target.value }))} options={TEAM_OPTIONS} />
               </div>
 
-              <div style={{ marginTop: 16, border: "1px solid var(--line)", borderRadius: 8, background: "var(--subtle)", padding: 12 }}>
-                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 500, marginBottom: 6 }}>Aperçu de l&apos;ingestion</div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.5 }}>{drawerPreview}</div>
+              <div className="mt-4 border border-line rounded-lg bg-subtle p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-1.5">Aperçu de l&apos;ingestion</div>
+                <div className="text-[12.5px] text-ink-soft leading-relaxed">{drawerPreview}</div>
               </div>
 
-              <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
-                <Shield size={14} style={{ flexShrink: 0, marginTop: 1 }} />Aucune donnée n&apos;est réécrite dans vos outils. Le parsing peut tourner en local (Ollama) — rien ne quitte votre infrastructure.
+              <div className="mt-3 flex gap-2 items-start text-[11.5px] text-muted leading-relaxed">
+                <Shield size={14} className="shrink-0 mt-[1px]" />Aucune donnée n&apos;est réécrite dans vos outils. Le parsing peut tourner en local (Ollama) — rien ne quitte votre infrastructure.
               </div>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, padding: "14px 18px", borderTop: "1px solid var(--line)", flexShrink: 0, background: "var(--surface)" }}>
+            <div className="flex items-center justify-end gap-2 p-3.5 px-[18px] border-t border-line shrink-0 bg-surface">
               <Button variant="ghost" size="md" onClick={() => setDrawer(null)}>Annuler</Button>
-              <Button variant="primary" size="md" disabled={drawerBusy} onClick={onSave} style={drawerMode === "sheet" ? { flex: 1, justifyContent: "center" } : undefined} icon={drawerBusy ? <LoaderCircle size={15} className="wv-spin" /> : <Check size={15} />}>{drawerBusy ? "Connexion…" : "Enregistrer & connecter"}</Button>
+              <Button variant="primary" size="md" disabled={drawerBusy} onClick={onSave} className={drawerMode === "sheet" ? "flex-1 justify-center" : undefined} icon={drawerBusy ? <LoaderCircle size={15} className="wv-spin" /> : <Check size={15} />}>{drawerBusy ? "Connexion…" : "Enregistrer & connecter"}</Button>
             </div>
           </div>
         </>
       )}
 
       {toast && (
-        <div role="status" aria-live="polite" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 60, display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--ink)", color: "#fff", fontSize: 13, boxShadow: "0 4px 14px rgba(15,15,15,0.16)", maxWidth: "calc(100% - 32px)" }}>
-          <Check size={15} color="var(--accent)" style={{ flexShrink: 0 }} /><span>{toast}</span>
-          <a href="/espace-de-travail" style={{ color: "#fff", textDecoration: "underline", whiteSpace: "nowrap", fontWeight: 500 }}>Voir le workspace</a>
+        <div role="status" aria-live="polite" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-60 flex items-center gap-2.5 p-[10px_14px] rounded-lg bg-ink text-white text-[13px] max-w-[calc(100%-32px)]" style={{ boxShadow: "0 4px 14px rgba(15,15,15,0.16)" }}>
+          <Check size={15} color="var(--accent)" className="shrink-0" /><span>{toast}</span>
+          <a href="/" className="text-white underline whitespace-nowrap font-medium">Voir le workspace</a>
         </div>
       )}
-    </div>
+    </WeaveShell>
   );
 }

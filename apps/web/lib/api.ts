@@ -1,8 +1,18 @@
-import type { Agent, Answer, Fact, OrgCfg, Skill } from "./types";
+import type { Agent, AgentRun, Answer, Fact, OrgCfg, Skill, WeaveStats } from "./types";
 
 const API = process.env.NEXT_PUBLIC_WEAVE_API || "http://127.0.0.1:8787";
+const API_KEY = process.env.NEXT_PUBLIC_WEAVE_API_KEY || "";
 
 export { API };
+
+function apiHeaders(extra?: HeadersInit): HeadersInit {
+  const base = new Headers(extra);
+  if (API_KEY) {
+    base.set("Authorization", `Bearer ${API_KEY}`);
+    base.set("X-API-Key", API_KEY);
+  }
+  return base;
+}
 
 function extractErrorMessage(status: number, text: string) {
   const trimmed = text.trim();
@@ -33,7 +43,8 @@ function extractErrorMessage(status: number, text: string) {
 }
 
 export async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
+  const headers = apiHeaders(init?.headers);
+  const res = await fetch(input, { ...init, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(extractErrorMessage(res.status, text));
@@ -110,3 +121,21 @@ export function injectMessage(project: string, team: string, workstream: string,
     body: JSON.stringify({ project, team, workstream, text, actor }),
   });
 }
+
+export function getStats(project: string) {
+  return fetchJson<WeaveStats>(`${API}/stats?project=${encodeURIComponent(project)}`);
+}
+
+export function runAgent(project: string, agent: string, task: string) {
+  return fetchJson<AgentRun>(`${API}/agents/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ project, agent, task }),
+  });
+}
+
+export function ingestSlack(project?: string) {
+  const q = project ? `?project=${encodeURIComponent(project)}` : "";
+  return fetchJson<{ ingested?: number; message?: string }>(`${API}/ingest/slack${q}`, { method: "POST" });
+}
+

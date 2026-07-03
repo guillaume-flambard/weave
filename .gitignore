@@ -23,3 +23,10 @@ apps/web/next-env.d.ts
 
 # Logs
 *.log
+
+# Test artifacts
+apps/web/test-results/
+apps/web/playwright-report/
+
+# Local tooling databases
+sqlite_mcp_server.db

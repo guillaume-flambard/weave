@@ -7,6 +7,17 @@ import {
 } from "lucide-react";
 import { Button, Badge, Avatar, StatusIndicator } from "../../components/ui/primitives";
 import { Panel, Card, Select, ScopeSelector } from "../../components/ui/workspace-ui";
+import { WeaveShell } from "../../components/layout/weave-shell";
+import { useWeaveProject } from "../../hooks/use-weave-project";
+import { useViewport } from "../../hooks/use-viewport";
+import {
+  buildEmergenceTimeline,
+  deriveKpis,
+  featuredSkills,
+  scopeKeyToFilter,
+} from "../../lib/live-metrics";
+import { orgToScopeTeams, slug } from "../../lib/scope";
+import type { Agent } from "../../lib/types";
 
 // Vue d'ensemble — ported from Claude Design (Vue d'ensemble.dc.html).
 // Executive dashboard: KPIs + sparklines, memory-growth chart with emergence
@@ -61,10 +72,10 @@ function sparkPath(seed: number, up: boolean) {
   return arr.map((val, i) => `${i === 0 ? "M" : "L"}${(i / (n - 1) * 100).toFixed(1)} ${(28 - val * 26 - 1).toFixed(1)}`).join(" ");
 }
 
-function buildChart(scope: string, days: number) {
-  const base = KPI_BY_SCOPE[scope];
+function buildChart(factEnd: number, skillEnd: number, days: number, seed: number) {
+  const base = { memory: Math.max(factEnd, 1), skills: Math.max(skillEnd, 1) };
   const n = days <= 7 ? 7 : days <= 30 ? 30 : 34;
-  const rF = rng(scope.length * 13 + days + 1);
+  const rF = rng(seed + days + 1);
   const fEnd = Math.max(base.memory, 1), sEnd = Math.max(base.skills, 1);
   const F: number[] = [], S: number[] = [];
   let f = fEnd * 0.15, s = 0;
@@ -88,17 +99,14 @@ function buildChart(scope: string, days: number) {
   return { factsPath, areaPath, skillsPath, markers, xLabels };
 }
 
-function useViewport() {
-  const [w, setW] = useState(1440);
-  useEffect(() => { const on = () => setW(window.innerWidth); on(); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
-  return w;
-}
-
 export default function VueDEnsemblePage() {
-  const w = useViewport();
+  const { width: w } = useViewport();
+  const weave = useWeaveProject();
   const [viewProp, setViewProp] = useState<View>("ready");
   const [viewOverride, setViewOverride] = useState<View | null>(null);
   const [scope, setScope] = useState("org");
+  const scopeTeams = orgToScopeTeams(weave.org);
+  const scopeFilter = scopeKeyToFilter(scope);
   const [days, setDays] = useState(30);
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -106,79 +114,69 @@ export default function VueDEnsemblePage() {
     const s = new URLSearchParams(window.location.search).get("state") as View | null;
     if (s && ["ready", "empty", "loading", "error"].includes(s)) setViewProp(s);
   }, []);
-  const view = viewOverride ?? viewProp;
+  const view = viewOverride ?? (weave.loading && viewProp === "ready" ? "loading" : weave.isEmpty && viewProp === "ready" ? "empty" : weave.error && viewProp === "ready" ? "error" : viewProp);
 
   const kpiCols = w >= 1080 ? 4 : w >= 560 ? 2 : 1;
   const mainSplit = w >= 1024;
   const bottomCols = w >= 920 ? 3 : w >= 560 ? 2 : 1;
   const isMobile = w < 560;
 
-  const k = KPI_BY_SCOPE[scope];
+  const k = deriveKpis(weave.stats, weave.skills, weave.agents, weave.facts, scopeFilter);
   const ready = view === "ready";
   const memory = k.memory, skillsN = k.skills, agentsN = k.agents, resolved = k.resolved;
-  const chart = buildChart(scope, days);
+  const chart = buildChart(k.memory, k.skills, days, scope.length * 13);
+  if (weave.skills.length > 0) {
+    chart.markers = chart.markers.map((m, i) => ({ ...m, name: weave.skills[Math.min(i, weave.skills.length - 1)]?.name ?? m.name }));
+  }
 
-  const timeline = scope === "org" ? TIMELINE : TIMELINE.filter((t) => t.team === scope || t.team === "org");
-  const featured = scope === "org" ? FEATURED : FEATURED.filter((s) => s.team === scope || s.team === "org");
-  const agentsList = scope === "org" ? AGENTS : AGENTS.filter((a) => a.team === scope || a.team === "org");
+  const timeline = buildEmergenceTimeline(weave.skills, weave.agents, scopeFilter);
+  const featured = featuredSkills(weave.skills, scopeFilter);
+  const agentsList = weave.agents
+    .filter((a) => scope === "org" || a.team === scope || a.team === "")
+    .map((a: Agent) => ({
+      name: a.name,
+      scopeLabel: a.derived_from,
+      status: a.status,
+      skills: a.skills,
+      team: a.team || "org",
+    }));
+
+  const scopeLabel = scope === "org" ? "Toute l'organisation" : scopeTeams.find((t) => t.id === scope)?.name ?? scope;
 
   const kpiRow: CSSProperties = { display: "grid", gridTemplateColumns: `repeat(${kpiCols}, minmax(0,1fr))`, gap: 16 };
   const mainRow: CSSProperties = mainSplit ? { display: "grid", gridTemplateColumns: "minmax(0,1.85fr) minmax(0,1fr)", gap: 16, alignItems: "start" } : { display: "flex", flexDirection: "column", gap: 16 };
   const bottomRow: CSSProperties = { display: "grid", gridTemplateColumns: `repeat(${bottomCols}, minmax(0,1fr))`, gap: 16, alignItems: "start" };
   const chartH = w < 560 ? 180 : 230;
 
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-sans)", color: "var(--ink)", WebkitFontSmoothing: "antialiased", boxSizing: "border-box" }}>
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 24px 56px" }}>
-        {/* TOP BAR */}
-        <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 0", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "var(--bg)", zIndex: 30 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, flexShrink: 0 }}>
-            <span style={{ width: 34, height: 34, borderRadius: 8, background: "var(--ink)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <svg viewBox="0 0 100 100" width="19" height="19" fill="none"><path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="#fff" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" /><circle cx="78" cy="30" r="7" fill="var(--accent)" /></svg>
-            </span>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em" }}>Weave</span>
-                <Badge tone="neutral">Cognitive Runtime</Badge>
-              </div>
-              {w >= 720 && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>Mémoire organisationnelle · PennyLane</div>}
-            </div>
-          </div>
-          {w >= 1180 && (
-            <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-              <div style={{ position: "relative", width: "100%", maxWidth: 420 }}>
-                <Search size={15} color="var(--muted)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-                <input type="text" placeholder="Rechercher dans la mémoire, les compétences, les agents…" style={{ width: "100%", height: 32, boxSizing: "border-box", border: "1px solid var(--line)", background: "var(--subtle)", borderRadius: 6, padding: "0 12px 0 34px", fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--ink)", outline: "none" }} />
-              </div>
-            </div>
-          )}
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {w >= 900 && <Button variant="secondary" size="md" icon={<CircleHelp size={15} />}>Visite guidée</Button>}
-            {w >= 640 && <div style={{ minWidth: 130 }}><Select value={scope} onChange={(e) => setScope(e.target.value)} options={Object.keys(SCOPE_LABELS).map((v) => ({ value: v, label: v === "org" ? "PennyLane" : SCOPE_LABELS[v] }))} fullWidth={false} /></div>}
-            {w >= 720 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface)", boxSizing: "border-box" }}>
-                <StatusIndicator connected labelConnected="en direct" />
-                <span style={{ width: 1, height: 14, background: "var(--line)" }} />
-                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Ollama (local)</span>
-              </div>
-            )}
-            <Avatar name="Sophie Bernard" size="md" />
-          </div>
-        </header>
+  const orgSwitcher = w >= 640 && (
+    <select
+      value={weave.orgId}
+      onChange={(e) => weave.switchOrg(e.target.value)}
+      aria-label="Organisation"
+      style={{ height: 32, border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface)", padding: "0 10px", fontSize: 12.5, fontFamily: "var(--font-sans)", color: "var(--ink)" }}
+    >
+      {weave.presets.map((p) => (
+        <option key={p.org} value={p.org}>{p.name}</option>
+      ))}
+    </select>
+  );
 
+  return (
+    <WeaveShell width={w} connected={weave.connected} llm={weave.llm} actions={orgSwitcher}>
+      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 24px 56px" }}>
         {/* PAGE HEADER */}
         <div style={{ padding: "22px 0 14px", display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.01em" }}>Vue d&apos;ensemble</h1>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>{SCOPE_LABELS[scope]}</span>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>{scopeLabel}</span>
           </div>
           {ready && (
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 {isMobile ? (
-                  <Select value={scope} onChange={(e) => setScope(e.target.value)} options={[{ value: "org", label: "Organisation" }, ...SCOPE_TEAMS.map((t) => ({ value: t.id, label: t.name }))]} />
+                  <Select value={scope} onChange={(e) => setScope(e.target.value)} options={[{ value: "org", label: "Organisation" }, ...scopeTeams.map((t) => ({ value: t.id, label: t.name }))]} />
                 ) : (
-                  <ScopeSelector teams={SCOPE_TEAMS} scope={{ team: scope === "org" ? undefined : scope }} onChange={(s) => setScope(s.team || "org")} />
+                  <ScopeSelector teams={scopeTeams} scope={{ team: scope === "org" ? undefined : scope }} onChange={(s) => setScope(s.team || "org")} trailing={scopeLabel} />
                 )}
               </div>
               <div style={{ display: "flex", gap: 4, border: "1px solid var(--line)", borderRadius: 6, padding: 3, background: "var(--surface)", flexShrink: 0 }}>
@@ -197,7 +195,7 @@ export default function VueDEnsemblePage() {
               <TriangleAlert size={30} color="var(--ink)" style={{ margin: "0 auto", display: "block" }} />
               <div style={{ marginTop: 14, fontSize: 15, fontWeight: 600 }}>Impossible de charger les données</div>
               <div style={{ marginTop: 6, fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>Une erreur est survenue lors du chargement de la vue d&apos;ensemble de PennyLane. Vos données sont intactes.</div>
-              <div style={{ marginTop: 18, display: "flex", justifyContent: "center" }}><Button variant="primary" onClick={() => setViewOverride("ready")}>Réessayer</Button></div>
+              <div style={{ marginTop: 18, display: "flex", justifyContent: "center" }}><Button variant="primary" onClick={() => { setViewOverride("ready"); window.location.href = "/"; }}>Réessayer</Button></div>
             </div>
           </div>
         )}
@@ -209,7 +207,7 @@ export default function VueDEnsemblePage() {
               <div style={{ marginTop: 16, fontSize: 16, fontWeight: 600 }}>Aucune activité pour l&apos;instant</div>
               <div style={{ marginTop: 8, fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.55 }}>Connectez une source ou simulez l&apos;activité : chaque question, réponse et décision de vos équipes se transforme en mémoire réutilisable.</div>
               <div style={{ marginTop: 22, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                <Button variant="primary" onClick={() => setViewOverride("ready")}>Simuler l&apos;activité</Button>
+                <a href="/" style={{ textDecoration: "none" }}><Button variant="primary">Simuler l&apos;activité</Button></a>
                 <a href="/connecter-les-sources" style={{ textDecoration: "none" }}><Button variant="secondary">Connecter une source</Button></a>
               </div>
             </div>
@@ -235,7 +233,7 @@ export default function VueDEnsemblePage() {
 
             {/* MAIN SPLIT */}
             <div style={mainRow}>
-              <Panel title="Croissance de la mémoire" icon={<TrendingUp size={15} strokeWidth={2} />} subtitle={`${SCOPE_LABELS[scope]} · ${days} derniers jours`}>
+              <Panel title="Croissance de la mémoire" icon={<TrendingUp size={15} strokeWidth={2} />} subtitle={`${scopeLabel} · ${days} derniers jours`}>
                 <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 14, fontSize: 12, color: "var(--ink-soft)", flexWrap: "wrap" }}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, height: 3, borderRadius: 2, background: "var(--accent)" }} />Faits</span>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, borderTop: "2px dashed var(--muted)" }} />Compétences</span>
@@ -268,18 +266,20 @@ export default function VueDEnsemblePage() {
                     const Icon = item.kind === "skill" ? Sparkles : item.kind === "org" ? Building2 : Bot;
                     const color = item.kind === "skill" ? "var(--accent)" : "var(--lvl-org)";
                     return (
-                      <Card key={i} tone={item.kind === "skill" ? "accent" : "organization"} emerge={i === 0} radius="lg" padding="12px">
+                      <Card key={`${item.name}-${i}`} tone={item.kind === "skill" ? "accent" : "organization"} emerge={i === 0} radius="lg" padding="12px">
                         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                           <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                             <Icon size={14} color={color} style={{ flexShrink: 0 }} />
                             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: 500, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
                           </span>
-                          <span style={{ flexShrink: 0 }}><Badge tone={item.level}>{item.levelLabel}</Badge></span>
+                          <span style={{ flexShrink: 0 }}><Badge tone={item.level as "organization"}>{item.levelLabel}</Badge></span>
                         </div>
                         <div style={{ marginTop: 5, fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.45 }}>{item.text}</div>
                         <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 7, fontSize: 11, color: "var(--muted)" }}>
-                          <Avatar name={item.actor} size="sm" /><span>{item.actor}</span><span>·</span><span>{item.time}</span>
-                          <span style={{ marginLeft: "auto", color: "var(--accent)", fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 3 }}>Voir<ArrowRight size={12} /></span>
+                          <Avatar name={item.actor} size="sm" /><span>{item.actor}</span>
+                          <span style={{ marginLeft: "auto" }}>
+                            <a href={item.kind === "agent" ? `/agent?name=${encodeURIComponent(item.name)}` : `/competence?name=${encodeURIComponent(item.name)}`} style={{ color: "var(--accent)", fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 3, textDecoration: "none" }}>Voir<ArrowRight size={12} /></a>
+                          </span>
                         </div>
                       </Card>
                     );
@@ -301,7 +301,7 @@ export default function VueDEnsemblePage() {
                             {isOrg ? <Building2 size={14} color="var(--lvl-org)" style={{ flexShrink: 0 }} /> : <Sparkles size={14} color="var(--accent)" style={{ flexShrink: 0 }} />}
                             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: 500, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
                           </span>
-                          <span style={{ flexShrink: 0 }}><Badge tone={s.level}>{s.levelLabel}</Badge></span>
+                          <span style={{ flexShrink: 0 }}><Badge tone={s.level as "organization"}>{s.levelLabel}</Badge></span>
                         </div>
                         <div style={{ marginTop: 5, fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.45 }}>{s.trigger}</div>
                         <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)" }}>
@@ -325,7 +325,7 @@ export default function VueDEnsemblePage() {
                             {pending ? <CircleDot size={13} color="var(--lvl-org)" style={{ flexShrink: 0 }} /> : <Circle size={13} color="var(--accent)" style={{ flexShrink: 0 }} />}
                             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: 500, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
                           </span>
-                          {pending ? <Button variant="dark" size="sm">Approuver</Button> : <Badge tone="active">actif</Badge>}
+                          {pending ? <Button variant="dark" size="sm" onClick={() => weave.approveAgent(a.name)}>Approuver</Button> : <Badge tone="active">actif</Badge>}
                         </div>
                         <div style={{ marginTop: 4, fontSize: 11, color: "var(--muted)" }}>{a.scopeLabel}</div>
                         {a.skills.length > 0 && (
@@ -339,7 +339,7 @@ export default function VueDEnsemblePage() {
                 </div>
               </Panel>
 
-              <Panel title="Sources connectées" icon={<Plug size={15} strokeWidth={2} />} count={SOURCES.length}>
+              <Panel title="Sources connectées" icon={<Plug size={15} strokeWidth={2} />} count={SOURCES.length} subtitle={weave.stats ? `${weave.stats.events} événements ingérés` : undefined}>
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {SOURCES.map((src) => (
                     <div key={src.name} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: "1px solid var(--line-soft)" }}>
@@ -364,7 +364,7 @@ export default function VueDEnsemblePage() {
           Mémoire scopée · personnel → équipe → projet → organisation · chaque réponse est traçable jusqu&apos;à ses sources
         </footer>
       </div>
-    </div>
+    </WeaveShell>
   );
 }
 

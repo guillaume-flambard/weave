@@ -78,4 +78,84 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run smoke E2E
-        run: pnpm test:e2e
+        run: pnpm test:e2e tests/e2e/smoke.spec.ts
+
+  e2e-hero:
+    name: Hero E2E (API + UI)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd="pg_isready -U weave -d weave"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgres://weave:weave@localhost:5433/weave
+      WEAVE_LLM_PROVIDER: heuristic
+      WEAVE_EMBED_PROVIDER: hash
+      WEAVE_E2E_API: http://127.0.0.1:8787
+      WEAVE_E2E_URL: http://127.0.0.1:3200
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Start weave-api
+        run: |
+          cargo run -p weave-api &
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:8787/health && exit 0
+            sleep 2
+          done
+          echo "weave-api did not become ready"
+          exit 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and start web
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_WEAVE_API: http://127.0.0.1:8787
+        run: |
+          pnpm build
+          pnpm exec next start -p 3200 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:3200/ && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run hero E2E
+        working-directory: apps/web
+        run: pnpm exec playwright test tests/e2e/hero.spec.ts

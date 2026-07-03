@@ -1,42 +1,33 @@
 "use client";
 
-import { CSSProperties, ReactNode, useState } from "react";
-
-// Weave Design System primitives — ported from the Claude Design project
-// (WeaveDesignSystem_08e506.*). Token-driven via CSS vars in globals.css.
+import { ReactNode } from "react";
 
 type BtnVariant = "primary" | "secondary" | "ghost" | "dark";
 type BtnSize = "sm" | "md" | "lg";
 
 export function Button({
-  variant = "secondary", size = "md", icon, onClick, children, disabled, title, type = "button", style,
+  variant = "secondary", size = "md", icon, onClick, children, disabled, title, type = "button", className,
+  ...rest
 }: {
   variant?: BtnVariant; size?: BtnSize; icon?: ReactNode; onClick?: () => void;
-  children?: ReactNode; disabled?: boolean; title?: string; type?: "button" | "submit"; style?: CSSProperties;
-}) {
-  const [hover, setHover] = useState(false);
-  const h = !disabled && hover;
-  const sizes: Record<BtnSize, CSSProperties> = {
-    sm: { height: 30, padding: "0 11px", fontSize: 12.5 },
-    md: { height: 40, padding: "0 16px", fontSize: 13.5 },
-    lg: { height: 44, padding: "0 18px", fontSize: 14 },
+  children?: ReactNode; disabled?: boolean; title?: string; type?: "button" | "submit"; className?: string;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const sizes: Record<BtnSize, string> = {
+    sm: "h-7.5 px-[11px] text-xs",
+    md: "h-10 px-4 text-sm",
+    lg: "h-11 px-[18px] text-sm",
   };
-  const palette: Record<BtnVariant, CSSProperties> = {
-    primary: { background: h ? "var(--accent-deep)" : "var(--accent)", color: "#fff", border: "1px solid transparent" },
-    secondary: { background: h ? "var(--subtle)" : "var(--surface)", color: "var(--ink-soft)", border: "1px solid var(--line)" },
-    ghost: { background: h ? "var(--subtle)" : "transparent", color: "var(--ink-soft)", border: "1px solid transparent" },
-    dark: { background: h ? "var(--ink-soft)" : "var(--ink)", color: "#fff", border: "1px solid transparent" },
+  const variants: Record<BtnVariant, string> = {
+    primary: "bg-accent hover:bg-accent-deep text-white border border-transparent",
+    secondary: "bg-surface hover:bg-subtle text-ink-soft border border-line",
+    ghost: "bg-transparent hover:bg-subtle text-ink-soft border border-transparent",
+    dark: "bg-ink hover:bg-ink-soft text-white border border-transparent",
   };
   return (
     <button
       type={type} onClick={onClick} disabled={disabled} title={title}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-        borderRadius: 6, fontFamily: "var(--font-sans)", fontWeight: 500, cursor: disabled ? "default" : "pointer",
-        whiteSpace: "nowrap", opacity: disabled ? 0.5 : 1, transition: "background 120ms ease",
-        ...sizes[size], ...palette[variant], ...style,
-      }}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-sans font-medium whitespace-nowrap transition-colors duration-120 ${disabled ? "cursor-default opacity-50" : "cursor-pointer"} ${sizes[size]} ${variants[variant]} ${className ?? ""}`}
+      {...rest}
     >
       {icon}{children}
     </button>
@@ -60,12 +51,10 @@ export function Badge({ tone = "team", shape = "capsule", uppercase = false, chi
   const t = TONES[tone] ?? TONES.team;
   const tag = shape === "tag";
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", height: tag ? 16 : 18, padding: tag ? "0 5px" : "0 7px",
-      borderRadius: tag ? 4 : 999, fontSize: tag ? 10 : 10.5, fontWeight: 500, lineHeight: 1,
-      letterSpacing: uppercase ? "0.04em" : undefined, textTransform: uppercase ? "uppercase" : undefined,
-      color: t.fg, background: t.bg, border: `1px solid ${t.border}`, whiteSpace: "nowrap",
-    }}>
+    <span
+      className={`inline-flex items-center whitespace-nowrap font-medium leading-none ${tag ? "h-4 px-[5px] text-[10px] rounded" : "h-[18px] px-[7px] text-[10.5px] rounded-full"} ${uppercase ? "tracking-wide uppercase" : ""}`}
+      style={{ color: t.fg, background: t.bg, border: `1px solid ${t.border}` }}
+    >
       {children}
     </span>
   );
@@ -73,13 +62,10 @@ export function Badge({ tone = "team", shape = "capsule", uppercase = false, chi
 
 export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
   const initials = name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-  const px = size === "sm" ? 24 : 30;
   return (
-    <span style={{
-      width: px, height: px, borderRadius: "50%", background: "var(--ink)", color: "#fff",
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-      fontSize: size === "sm" ? 10 : 12, fontWeight: 600, flexShrink: 0, letterSpacing: "-0.02em",
-    }}>
+    <span
+      className={`inline-flex items-center justify-center rounded-full bg-ink text-white font-semibold shrink-0 tracking-tighter ${size === "sm" ? "w-6 h-6 text-[10px]" : "w-7.5 h-7.5 text-xs"}`}
+    >
       {initials}
     </span>
   );
@@ -88,8 +74,8 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md"
 export function StatusIndicator({ connected = true, labelConnected = "en direct", labelOffline = "hors ligne" }:
   { connected?: boolean; labelConnected?: string; labelOffline?: string }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: connected ? "var(--accent-deep)" : "var(--muted)" }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: connected ? "var(--accent)" : "var(--muted)" }} />
+    <span className={`inline-flex items-center gap-1.5 text-[11px] ${connected ? "text-accent-deep" : "text-muted"}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-accent" : "bg-muted"}`} />
       {connected ? labelConnected : labelOffline}
     </span>
   );

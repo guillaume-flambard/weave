@@ -6,6 +6,9 @@ import {
   Bot, Check, Lock, TriangleAlert, CircleCheck, History, Plus, Info,
 } from "lucide-react";
 import { Button, Badge, Avatar, StatusIndicator } from "../../components/ui/primitives";
+import { WeaveShell } from "../../components/layout/weave-shell";
+import { useWeaveProject } from "../../hooks/use-weave-project";
+import { useViewport } from "../../hooks/use-viewport";
 
 // Gouvernance — ported from Claude Design (Gouvernance.dc.html) to React.
 // Multi-tenant governance: approval queue, audit log, teams, access matrix.
@@ -74,19 +77,14 @@ function defaultAccess(): Access {
   return a;
 }
 
-function useViewport() {
-  const [w, setW] = useState(1440);
-  useEffect(() => {
-    const on = () => setW(window.innerWidth);
-    on();
-    window.addEventListener("resize", on);
-    return () => window.removeEventListener("resize", on);
-  }, []);
-  return w;
+function useViewportWidth() {
+  const { width } = useViewport();
+  return width;
 }
 
 export default function GouvernancePage() {
-  const w = useViewport();
+  const w = useViewportWidth();
+  const weave = useWeaveProject();
   const [view, setView] = useState<View>("normal");
   const [section, setSection] = useState<Section>("gouvernance");
   const [queue, setQueue] = useState<QueueItem[]>(INITIAL_QUEUE);
@@ -109,6 +107,21 @@ export default function GouvernancePage() {
     if (sec && NAV.some((n) => n.id === sec)) setSection(sec);
   }, []);
   useEffect(() => () => { clearTimeout(toastT.current); clearTimeout(resolveT.current); }, []);
+
+  useEffect(() => {
+    const fromApi: QueueItem[] = weave.agents
+      .filter((a) => a.status === "pending")
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        kind: "agent" as const,
+        level: "team" as Level,
+        levelLabel: "Team",
+        derived: a.derived_from,
+        requested: "récemment",
+      }));
+    if (fromApi.length > 0) setQueue(fromApi);
+  }, [weave.agents]);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -141,7 +154,20 @@ export default function GouvernancePage() {
     const acted = queue.filter((x) => ids.includes(x.id));
     setResolving((r) => { const n = { ...r }; ids.forEach((id) => (n[id] = true)); return n; });
     clearTimeout(resolveT.current);
-    resolveT.current = setTimeout(() => {
+    resolveT.current = setTimeout(async () => {
+      if (approved) {
+        for (const item of acted) {
+          if (item.kind === "agent") {
+            try {
+              await weave.approveAgent(item.name);
+            } catch {
+              flash("Échec de l'approbation API");
+              setResolving((r) => { const n = { ...r }; ids.forEach((id) => delete n[id]); return n; });
+              return;
+            }
+          }
+        }
+      }
       setQueue((q) => q.filter((x) => !ids.includes(x.id)));
       setAudit((prev) => [
         ...acted.map((x) => ({
@@ -172,48 +198,22 @@ export default function GouvernancePage() {
   const [title, subtitle] = META[section];
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-sans)", color: "var(--ink)", WebkitFontSmoothing: "antialiased", boxSizing: "border-box" }}>
-      {/* TOP APP BAR */}
-      <div style={{ borderBottom: "1px solid var(--line)" }}>
-        <header style={{ maxWidth: 1360, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14 }}>
-          <a href="/" style={{ display: "flex", alignItems: "center", gap: 11, flexShrink: 0, textDecoration: "none" }}>
-            <span style={{ width: 32, height: 32, borderRadius: 7, background: "var(--ink)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-              <svg viewBox="0 0 100 100" width="18" height="18" fill="none">
-                <path d="M22 30 L38 74 L50 46 L62 74 L78 30" stroke="#fff" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="78" cy="30" r="7" fill="var(--accent)" />
-              </svg>
-            </span>
-            <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink)" }}>Weave</span>
-            <span style={{ marginLeft: 6, fontSize: 12, color: "var(--muted)", borderLeft: "1px solid var(--line)", paddingLeft: 12 }}>Réglages</span>
-          </a>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {showStatus && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface)", boxSizing: "border-box" }}>
-                <StatusIndicator connected labelConnected="en direct" />
-                <span style={{ width: 1, height: 14, background: "var(--line)" }} />
-                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Ollama (local)</span>
-              </div>
-            )}
-            <Avatar name="Sophie Bernard" size="md" />
-          </div>
-        </header>
-      </div>
-
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: navVertical ? "20px 24px 96px" : "16px 20px 96px", display: "flex", gap: navVertical ? 28 : 0, flexDirection: navVertical ? "row" : "column", alignItems: "flex-start" }}>
+    <WeaveShell width={w} connected llm="Ollama (local)" subtitle="Réglages">
+      <div className="max-w-[1360px] mx-auto flex items-start" style={{ padding: navVertical ? "20px 24px 96px" : "16px 20px 96px", gap: navVertical ? 28 : 0, flexDirection: navVertical ? "row" : "column" }}>
         {/* SETTINGS NAV */}
         {navVertical ? (
-          <nav aria-label="Réglages" style={{ flexShrink: 0, width: navLabels ? 216 : 52, position: "sticky", top: 16, alignSelf: "flex-start" }}>
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 500, padding: "0 10px 8px" }}>PennyLane</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <nav aria-label="Réglages" className="shrink-0 sticky top-4 self-start" style={{ width: navLabels ? 216 : 52 }}>
+            <div className="text-[11px] uppercase tracking-wider text-muted font-medium px-[10px] pb-2">PennyLane</div>
+            <div className="flex flex-col gap-0.5">
               {NAV.map((n) => {
                 const active = n.id === section;
                 const Icon = n.icon;
                 const showBadge = n.id === "gouvernance" && queueCount > 0 && !isDenied;
                 return (
                   <button key={n.id} type="button" title={n.label} aria-current={active ? "page" : undefined} onClick={() => setSection(n.id)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: "none", cursor: "pointer", borderRadius: 6, padding: navLabels ? "8px 10px" : 9, fontSize: 13, fontFamily: "var(--font-sans)", background: active ? "var(--accent-soft)" : "transparent", color: active ? "var(--accent-deep)" : "var(--ink-soft)", fontWeight: active ? 500 : 400, justifyContent: navLabels ? "flex-start" : "center", transition: "background 120ms ease" }}>
-                    <span style={{ flexShrink: 0, display: "inline-flex", color: active ? "var(--accent)" : "var(--muted)" }}><Icon size={15} strokeWidth={2} /></span>
-                    {navLabels && <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.label}</span>}
+                    className="flex items-center gap-2.5 w-full border-none cursor-pointer rounded-md text-[13px] font-sans transition-colors duration-120" style={{ padding: navLabels ? "8px 10px" : 9, background: active ? "var(--accent-soft)" : "transparent", color: active ? "var(--accent-deep)" : "var(--ink-soft)", fontWeight: active ? 500 : 400, justifyContent: navLabels ? "flex-start" : "center" }}>
+                    <span className="shrink-0 inline-flex" style={{ color: active ? "var(--accent)" : "var(--muted)" }}><Icon size={15} strokeWidth={2} /></span>
+                    {navLabels && <span className="flex-1 text-left truncate">{n.label}</span>}
                     {showBadge && <Count>{queueCount}</Count>}
                   </button>
                 );
@@ -221,15 +221,15 @@ export default function GouvernancePage() {
             </div>
           </nav>
         ) : (
-          <div className="wv-scroll" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 0 10px", position: "sticky", top: 0, zIndex: 15, background: "var(--bg)", width: "100%" }}>
+          <div className="wv-scroll flex gap-2 overflow-x-auto pt-0.5 pb-[10px] sticky top-0 z-[15] bg-bg w-full">
             {NAV.map((n) => {
               const active = n.id === section;
               const Icon = n.icon;
               const showBadge = n.id === "gouvernance" && queueCount > 0 && !isDenied;
               return (
                 <button key={n.id} type="button" onClick={() => setSection(n.id)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 7, flexShrink: 0, border: `1px solid ${active ? "color-mix(in srgb, var(--accent) 30%, var(--line))" : "var(--line)"}`, background: active ? "var(--accent-soft)" : "var(--surface)", color: active ? "var(--accent-deep)" : "var(--ink-soft)", borderRadius: 999, padding: "6px 12px", fontSize: 12.5, fontFamily: "var(--font-sans)", cursor: "pointer", whiteSpace: "nowrap" }}>
-                  <span style={{ flexShrink: 0, display: "inline-flex", color: active ? "var(--accent)" : "var(--muted)" }}><Icon size={14} strokeWidth={2} /></span>
+                  className="inline-flex items-center gap-[7px] shrink-0 rounded-full p-[6px_12px] text-[12.5px] font-sans cursor-pointer whitespace-nowrap" style={{ border: `1px solid ${active ? "color-mix(in srgb, var(--accent) 30%, var(--line))" : "var(--line)"}`, background: active ? "var(--accent-soft)" : "var(--surface)", color: active ? "var(--accent-deep)" : "var(--ink-soft)" }}>
+                  <span className="shrink-0 inline-flex" style={{ color: active ? "var(--accent)" : "var(--muted)" }}><Icon size={14} strokeWidth={2} /></span>
                   {n.label}
                   {showBadge && <Count>{queueCount}</Count>}
                 </button>
@@ -239,61 +239,61 @@ export default function GouvernancePage() {
         )}
 
         {/* MAIN */}
-        <main style={{ flex: 1, minWidth: 0, width: navVertical ? "auto" : "100%" }}>
-          <div style={{ marginBottom: 18 }}>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.01em", color: "var(--ink)" }}>{title}</h1>
-            {subtitle && <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.5, maxWidth: 640 }}>{subtitle}</p>}
+        <main className="flex-1 min-w-0" style={{ width: navVertical ? "auto" : "100%" }}>
+          <div className="mb-[18px]">
+            <h1 className="m-0 text-xl font-semibold tracking-tight text-ink">{title}</h1>
+            {subtitle && <p className="mt-[6px] text-[13.5px] text-ink-soft leading-[1.5] max-w-[640px]">{subtitle}</p>}
           </div>
 
           {isDenied && (
-            <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: "32px 28px", textAlign: "center", maxWidth: 460, margin: "24px auto" }}>
-              <Lock size={40} strokeWidth={1.6} color="var(--muted)" style={{ display: "block", margin: "0 auto" }} />
-              <div style={{ marginTop: 14, fontSize: 16, fontWeight: 600, color: "var(--ink)" }}>Accès réservé aux administrateurs</div>
-              <div style={{ marginTop: 6, fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.55 }}>La gouvernance des émergences est gérée par les administrateurs de l&apos;organisation. Demandez l&apos;accès à un admin PennyLane pour approuver des agents.</div>
-              <div style={{ marginTop: 18, display: "flex", justifyContent: "center" }}><Button variant="secondary">Demander l&apos;accès</Button></div>
+            <div className="border border-line rounded-lg bg-surface p-[32px_28px] text-center max-w-[460px] my-6 mx-auto">
+              <Lock size={40} strokeWidth={1.6} color="var(--muted)" className="block mx-auto" />
+              <div className="mt-3.5 text-[16px] font-semibold text-ink">Accès réservé aux administrateurs</div>
+              <div className="mt-1.5 text-sm text-ink-soft leading-[1.55]">La gouvernance des émergences est gérée par les administrateurs de l&apos;organisation. Demandez l&apos;accès à un admin PennyLane pour approuver des agents.</div>
+              <div className="mt-[18px] flex justify-center"><Button variant="secondary">Demander l&apos;accès</Button></div>
             </div>
           )}
 
           {isError && (
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--subtle)" }}>
-              <TriangleAlert size={17} color="var(--ink)" style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13, color: "var(--ink-soft)" }}>La file de gouvernance n&apos;a pas pu être chargée.</span>
+            <div className="flex items-center gap-3 p-3.5 px-4 border border-line rounded-lg bg-subtle">
+              <TriangleAlert size={17} color="var(--ink)" className="shrink-0" />
+              <span className="flex-1 text-sm text-ink-soft">La file de gouvernance n&apos;a pas pu être chargée.</span>
               <Button variant="secondary" size="sm" onClick={() => flash("Rechargement…")}>Réessayer</Button>
             </div>
           )}
 
           {/* GOUVERNANCE */}
           {showGovernance && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <div className="flex flex-col gap-6">
               <section>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  <div className="flex items-center gap-[9px]">
                     <Shield size={16} color="var(--ink)" />
-                    <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>File d&apos;approbation</h2>
+                    <h2 className="m-0 text-sm font-semibold text-ink">File d&apos;approbation</h2>
                     {hasQueue && <Badge tone="pending">{queueCount} en attente</Badge>}
                   </div>
                   {hasQueue && (
-                    <button type="button" onClick={toggleAll} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", color: "var(--accent)", fontSize: 12.5, fontWeight: 500, fontFamily: "var(--font-sans)" }}>
+                    <button type="button" onClick={toggleAll} className="border-none bg-transparent p-0 cursor-pointer text-accent text-[12.5px] font-medium font-sans">
                       {allSelected ? "Tout désélectionner" : "Tout sélectionner"}
                     </button>
                   )}
                 </div>
 
                 {isLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div className="flex flex-col gap-2.5">
                     {[44, 40, 48].map((wpc, i) => (
-                      <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 16, background: "var(--surface)" }}>
-                        <div className="wv-shimmer" style={{ height: 14, width: `${wpc}%` }} />
-                        <div className="wv-shimmer" style={{ height: 12, width: `${wpc + 18}%`, marginTop: 10 }} />
+                      <div key={i} className="border border-line rounded-lg p-4 bg-surface">
+                        <div className="wv-shimmer h-3.5" style={{ width: `${wpc}%` }} />
+                        <div className="wv-shimmer h-3 mt-[10px]" style={{ width: `${wpc + 18}%` }} />
                       </div>
                     ))}
                   </div>
                 )}
 
                 {showGovernance && selCount > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid color-mix(in srgb, var(--accent) 30%, var(--line))", borderRadius: 8, background: "var(--accent-soft)", marginBottom: 10, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 13, color: "var(--accent-deep)", fontWeight: 500 }}>{selCount} sélectionné(s)</span>
-                    <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                  <div className="flex items-center gap-2.5 p-[10px_14px] rounded-lg bg-accent-soft mb-[10px] flex-wrap" style={{ border: "1px solid color-mix(in srgb, var(--accent) 30%, var(--line))" }}>
+                    <span className="text-sm text-accent-deep font-medium">{selCount} sélectionné(s)</span>
+                    <div className="ml-auto flex gap-2">
                       <Button variant="primary" size="sm" icon={<Check size={14} />} onClick={() => resolve(visibleQueue.filter((q) => sel[q.id]).map((q) => q.id), true)}>Approuver</Button>
                       <Button variant="ghost" size="sm" onClick={() => resolve(visibleQueue.filter((q) => sel[q.id]).map((q) => q.id), false)}>Rejeter</Button>
                     </div>
@@ -301,37 +301,37 @@ export default function GouvernancePage() {
                 )}
 
                 {isQueueEmpty && (
-                  <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: "28px 20px", textAlign: "center" }}>
-                    <CircleCheck size={30} strokeWidth={1.7} color="var(--lvl-team)" style={{ display: "block", margin: "0 auto" }} />
-                    <div style={{ marginTop: 12, fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>Rien à approuver — tout est à jour</div>
-                    <div style={{ marginTop: 4, fontSize: 12.5, color: "var(--muted)" }}>Les nouvelles émergences apparaîtront ici avant toute mise en service.</div>
+                  <div className="border border-line rounded-lg bg-surface p-7 px-5 text-center">
+                    <CircleCheck size={30} strokeWidth={1.7} color="var(--lvl-team)" className="block mx-auto" />
+                    <div className="mt-3 text-sm font-medium text-ink">Rien à approuver — tout est à jour</div>
+                    <div className="mt-1 text-[12.5px] text-muted">Les nouvelles émergences apparaîtront ici avant toute mise en service.</div>
                   </div>
                 )}
 
                 {showQueueRows && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div className="flex flex-col gap-2.5">
                     {visibleQueue.map((q) => {
                       const selected = !!sel[q.id];
                       const isResolving = !!resolving[q.id];
                       const TypeIcon = q.kind === "agent" ? Bot : Building2;
                       return (
-                        <div key={q.id} style={{ overflow: "hidden", maxHeight: isResolving ? 0 : 260, opacity: isResolving ? 0 : 1, transition: "max-height 240ms ease, opacity 200ms ease" }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: isNarrow ? "wrap" : "nowrap", border: `1px solid ${selected ? "color-mix(in srgb, var(--accent) 35%, var(--line))" : "var(--line)"}`, borderRadius: 8, background: selected ? "color-mix(in srgb, var(--accent-soft) 60%, var(--surface))" : "var(--surface)", padding: 14, transition: "background 120ms ease, border-color 120ms ease" }}>
+                        <div key={q.id} className="overflow-hidden" style={{ maxHeight: isResolving ? 0 : 260, opacity: isResolving ? 0 : 1, transition: "max-height 240ms ease, opacity 200ms ease" }}>
+                          <div className="flex items-start gap-3 rounded-lg p-3.5" style={{ flexWrap: isNarrow ? "wrap" : "nowrap", border: `1px solid ${selected ? "color-mix(in srgb, var(--accent) 35%, var(--line))" : "var(--line)"}`, background: selected ? "color-mix(in srgb, var(--accent-soft) 60%, var(--surface))" : "var(--surface)", transition: "background 120ms ease, border-color 120ms ease" }}>
                             <button type="button" aria-label="Sélectionner" onClick={() => setSel((s) => ({ ...s, [q.id]: !s[q.id] }))}
-                              style={{ flexShrink: 0, marginTop: 1, width: 20, height: 20, borderRadius: 5, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", background: selected ? "var(--accent)" : "transparent", border: `1px solid ${selected ? "var(--accent)" : "var(--line)"}` }}>
+                              className="shrink-0 mt-[1px] w-5 h-5 rounded-[5px] cursor-pointer inline-flex items-center justify-center" style={{ background: selected ? "var(--accent)" : "transparent", border: `1px solid ${selected ? "var(--accent)" : "var(--line)"}` }}>
                               {selected && <Check size={12} strokeWidth={3} color="#fff" />}
                             </button>
-                            <span style={{ flexShrink: 0, width: 34, height: 34, borderRadius: 8, background: "var(--subtle)", color: "var(--ink-soft)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><TypeIcon size={16} /></span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 500, color: "var(--ink)", wordBreak: "break-word" }}>{q.name}</span>
+                            <span className="shrink-0 w-[34px] h-[34px] rounded-lg bg-subtle text-ink-soft inline-flex items-center justify-center"><TypeIcon size={16} /></span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-sm font-medium text-ink break-words">{q.name}</span>
                                 <Badge tone={q.level}>{q.levelLabel}</Badge>
-                                <span style={{ fontSize: 11, color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 6px" }}>{q.kind === "agent" ? "agent" : "promotion org"}</span>
+                                <span className="text-[11px] text-muted border border-line rounded-sm p-[1px_6px]">{q.kind === "agent" ? "agent" : "promotion org"}</span>
                               </div>
-                              <div style={{ marginTop: 5, fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.45 }}>{q.derived}</div>
-                              <div style={{ marginTop: 4, fontSize: 11, color: "var(--muted)" }}>demandé {q.requested}</div>
+                              <div className="mt-[5px] text-[12.5px] text-ink-soft leading-[1.45]">{q.derived}</div>
+                              <div className="mt-1 text-[11px] text-muted">demandé {q.requested}</div>
                             </div>
-                            <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: isNarrow ? 4 : 0, width: isNarrow ? "100%" : "auto", justifyContent: isNarrow ? "flex-end" : "flex-start", flexWrap: "wrap" }}>
+                            <div className="flex gap-1.5 shrink-0 flex-wrap" style={{ marginTop: isNarrow ? 4 : 0, width: isNarrow ? "100%" : "auto", justifyContent: isNarrow ? "flex-end" : "flex-start" }}>
                               <Button variant="secondary" size="sm">Voir</Button>
                               <Button variant="ghost" size="sm" onClick={() => resolve([q.id], false)}>Rejeter</Button>
                               <Button variant="primary" size="sm" icon={<Check size={14} />} onClick={() => resolve([q.id], true)}>Approuver</Button>
@@ -346,34 +346,34 @@ export default function GouvernancePage() {
 
               {/* Journal d'audit */}
               <section>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  <div className="flex items-center gap-[9px]">
                     <History size={16} color="var(--ink)" />
-                    <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Journal d&apos;audit</h2>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>lecture seule</span>
+                    <h2 className="m-0 text-sm font-semibold text-ink">Journal d&apos;audit</h2>
+                    <span className="text-[11px] text-muted">lecture seule</span>
                   </div>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div className="flex gap-1.5">
                     {([["all", "Tout"], ["approve", "Approbations"], ["reject", "Rejets"]] as const).map(([k, label]) => {
                       const on = auditFilter === k;
                       return (
                         <button key={k} type="button" onClick={() => setAuditFilter(k)}
-                          style={{ border: `1px solid ${on ? "color-mix(in srgb, var(--accent) 30%, var(--line))" : "var(--line)"}`, background: on ? "var(--accent-soft)" : "var(--surface)", color: on ? "var(--accent-deep)" : "var(--ink-soft)", borderRadius: 6, padding: "4px 9px", fontSize: 11.5, cursor: "pointer", fontFamily: "var(--font-sans)" }}>{label}</button>
+                          className="rounded-md p-[4px_9px] text-[11.5px] cursor-pointer font-sans" style={{ border: `1px solid ${on ? "color-mix(in srgb, var(--accent) 30%, var(--line))" : "var(--line)"}`, background: on ? "var(--accent-soft)" : "var(--surface)", color: on ? "var(--accent-deep)" : "var(--ink-soft)" }}>{label}</button>
                       );
                     })}
                   </div>
                 </div>
-                <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: "6px 14px" }}>
+                <div className="border border-line rounded-lg bg-surface p-[6px_14px]">
                   {(() => {
                     const rows = auditFilter === "all" ? audit : audit.filter((a) => auditFilter === "approve" ? (a.kind === "approve" || a.kind === "promote") : a.kind === "reject");
                     return rows.map((a, i) => (
-                      <div key={a.id} style={{ display: "flex", gap: 12 }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
-                          <span style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0, background: a.kind === "reject" ? "var(--muted)" : a.kind === "promote" ? "var(--lvl-org)" : "var(--lvl-team)" }} />
-                          {i < rows.length - 1 && <span style={{ width: 1, flex: 1, minHeight: 22, background: "var(--line)" }} />}
+                      <div key={a.id} className="flex gap-3">
+                        <div className="flex flex-col items-center shrink-0 pt-0.5">
+                          <span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: a.kind === "reject" ? "var(--muted)" : a.kind === "promote" ? "var(--lvl-org)" : "var(--lvl-team)" }} />
+                          {i < rows.length - 1 && <span className="w-px flex-1 min-h-[22px] bg-line" />}
                         </div>
-                        <div style={{ flex: 1, minWidth: 0, paddingBottom: 14 }}>
-                          <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}><span style={{ fontWeight: 500 }}>{a.actor}</span> {a.verb} <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-soft)" }}>{a.target}</span></div>
-                          <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11, color: "var(--muted)" }}><span>{a.when}</span>{a.note && <><span>·</span><span>{a.note}</span></>}</div>
+                        <div className="flex-1 min-w-0 pb-3.5">
+                          <div className="text-sm text-ink leading-[1.5]"><span className="font-medium">{a.actor}</span> {a.verb} <span className="font-mono text-ink-soft">{a.target}</span></div>
+                          <div className="mt-0.5 flex items-center gap-2 flex-wrap text-[11px] text-muted"><span>{a.when}</span>{a.note && <><span>·</span><span>{a.note}</span></>}</div>
                         </div>
                       </div>
                     ));
@@ -385,28 +385,28 @@ export default function GouvernancePage() {
 
           {/* ÉQUIPES & PROJETS */}
           {section === "teams" && (
-            <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", overflow: "hidden" }}>
+            <div className="border border-line rounded-lg bg-surface overflow-hidden">
               {TEAMS.map((t) => (
-                <div key={t.name} style={{ borderBottom: "1px solid var(--line-soft)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px" }}>
-                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: t.dot, flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>Équipe {t.name}</span>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>{t.members.length} {t.members.length > 1 ? "membres" : "membre"}</span>
-                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+                <div key={t.name} className="border-b border-line-soft">
+                  <div className="flex items-center gap-2.5 p-3 px-[14px]">
+                    <span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: t.dot }} />
+                    <span className="text-sm font-semibold text-ink">Équipe {t.name}</span>
+                    <span className="text-[11px] text-muted">{t.members.length} {t.members.length > 1 ? "membres" : "membre"}</span>
+                    <div className="ml-auto flex items-center">
                       {t.members.slice(0, 4).map((m, i) => <span key={m} style={{ marginLeft: i === 0 ? 0 : -6 }}><Avatar name={m} size="sm" /></span>)}
                     </div>
                   </div>
                   {t.projects.length > 0 && (
-                    <div style={{ padding: "0 14px 12px 34px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="pl-[34px] pr-[14px] pb-3 flex flex-col gap-1.5">
                       {t.projects.map((p) => (
-                        <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", borderRadius: 6, padding: "8px 11px", background: "var(--bg)" }}>
-                          <FolderOpen size={13} color="var(--lvl-project)" style={{ flexShrink: 0 }} />
-                          <span style={{ fontSize: 13, color: "var(--ink)" }}>{p.name}</span>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)" }}>{p.slug}</span>
-                          <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>{p.domain}</span>
+                        <div key={p.slug} className="flex items-center gap-2.5 border border-line rounded-md p-[8px_11px] bg-bg">
+                          <FolderOpen size={13} color="var(--lvl-project)" className="shrink-0" />
+                          <span className="text-[13px] text-ink">{p.name}</span>
+                          <span className="font-mono text-[11px] text-muted">{p.slug}</span>
+                          <span className="ml-auto text-[11px] text-muted">{p.domain}</span>
                         </div>
                       ))}
-                      <button type="button" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, border: "1px dashed var(--line)", background: "transparent", borderRadius: 6, padding: "6px 10px", cursor: "pointer", color: "var(--muted)", fontSize: 12, fontFamily: "var(--font-sans)" }}><Plus size={13} />Ajouter un projet</button>
+                      <button type="button" className="self-start inline-flex items-center gap-1.5 border border-dashed border-line bg-transparent rounded-md p-[6px_10px] cursor-pointer text-muted text-[12px] font-sans"><Plus size={13} />Ajouter un projet</button>
                     </div>
                   )}
                 </div>
@@ -419,28 +419,28 @@ export default function GouvernancePage() {
             <div>
               {accessMatrix ? (
                 <>
-                  <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", overflow: "hidden" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1.4fr repeat(4, 1fr)", alignItems: "center", background: "var(--subtle)", borderBottom: "1px solid var(--line)" }}>
-                      <div style={{ padding: "11px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", fontWeight: 500 }}>Équipe peut lire →</div>
-                      {LEVELS.map((l) => <div key={l.key} style={{ padding: "11px 8px", display: "flex", justifyContent: "center" }}><Badge tone={l.tone}>{l.label}</Badge></div>)}
+                  <div className="border border-line rounded-lg bg-surface overflow-hidden">
+                    <div className="grid items-center bg-subtle border-b border-line" style={{ gridTemplateColumns: "1.4fr repeat(4, 1fr)" }}>
+                      <div className="p-[11px_14px] text-[11px] uppercase tracking-wider text-muted font-medium">Équipe peut lire →</div>
+                      {LEVELS.map((l) => <div key={l.key} className="p-[11px_8px] flex justify-center"><Badge tone={l.tone}>{l.label}</Badge></div>)}
                     </div>
                     {TEAMS.map((t, ri) => (
-                      <div key={t.name} style={{ display: "grid", gridTemplateColumns: "1.4fr repeat(4, 1fr)", alignItems: "center", borderTop: ri === 0 ? "none" : "1px solid var(--line-soft)" }}>
-                        <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: t.dot, flexShrink: 0 }} /><span style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{t.name}</span></div>
-                        {LEVELS.map((l) => <div key={l.key} style={{ padding: "10px 8px", display: "flex", justifyContent: "center" }}><Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} lit ${l.label}`} onClick={() => toggleAccess(t.name, l.key)} /></div>)}
+                      <div key={t.name} className="grid items-center" style={{ gridTemplateColumns: "1.4fr repeat(4, 1fr)", borderTop: ri === 0 ? "none" : "1px solid var(--line-soft)" }}>
+                        <div className="p-3 px-[14px] flex items-center gap-2"><span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: t.dot }} /><span className="text-[13px] text-ink font-medium">{t.name}</span></div>
+                        {LEVELS.map((l) => <div key={l.key} className="p-[10px_8px] flex justify-center"><Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} lit ${l.label}`} onClick={() => toggleAccess(t.name, l.key)} /></div>)}
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--muted)", display: "flex", alignItems: "center", gap: 6 }}><Info size={13} />La mémoire personnelle reste privée par défaut — une équipe ne lit que ce que vous activez ici.</div>
+                  <div className="mt-[10px] text-[11.5px] text-muted flex items-center gap-1.5"><Info size={13} />La mémoire personnelle reste privée par défaut — une équipe ne lit que ce que vous activez ici.</div>
                 </>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className="flex flex-col gap-2.5">
                   {TEAMS.map((t) => (
-                    <div key={t.name} style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: 14 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: t.dot, flexShrink: 0 }} /><span style={{ fontSize: 14, color: "var(--ink)", fontWeight: 600 }}>{t.name}</span></div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div key={t.name} className="border border-line rounded-lg bg-surface p-3.5">
+                      <div className="flex items-center gap-2 mb-[10px]"><span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: t.dot }} /><span className="text-sm text-ink font-semibold">{t.name}</span></div>
+                      <div className="flex flex-col gap-2">
                         {LEVELS.map((l) => (
-                          <div key={l.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                          <div key={l.key} className="flex items-center justify-between gap-2.5">
                             <Badge tone={l.tone}>{l.label}</Badge>
                             <Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} lit ${l.label}`} onClick={() => toggleAccess(t.name, l.key)} />
                           </div>
@@ -455,16 +455,16 @@ export default function GouvernancePage() {
 
           {/* Placeholder sections */}
           {(section === "org" || section === "members" || section === "sources" || section === "billing") && (
-            <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: "28px 20px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Cette section n&apos;est pas incluse dans la démo.</div>
+            <div className="border border-line rounded-lg bg-surface p-7 px-5 text-center text-muted text-[13px]">Cette section n&apos;est pas incluse dans la démo.</div>
           )}
         </main>
       </div>
 
       {/* STICKY SAVE */}
       {accessDirty && (
-        <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 60, display: "flex", alignItems: "center", gap: 14, padding: "10px 12px 10px 16px", borderRadius: 10, background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "0 8px 28px rgba(15,15,15,0.14)", maxWidth: "calc(100% - 32px)" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-soft)" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lvl-org)" }} />Modifié, non enregistré</span>
-          <div style={{ display: "flex", gap: 8 }}>
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-60 flex items-center gap-3.5 p-[10px_12px_10px_16px] rounded-xl bg-surface border border-line max-w-[calc(100%-32px)]" style={{ boxShadow: "0 8px 28px rgba(15,15,15,0.14)" }}>
+          <span className="inline-flex items-center gap-[7px] text-[12.5px] text-ink-soft"><span className="w-[7px] h-[7px] rounded-full bg-lvl-org" />Modifié, non enregistré</span>
+          <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={() => setAccess(JSON.parse(JSON.stringify(savedAccess)))}>Annuler</Button>
             <Button variant="primary" size="sm" onClick={() => { setSavedAccess(JSON.parse(JSON.stringify(access))); flash("Périmètres d'accès enregistrés"); }}>Enregistrer</Button>
           </div>
@@ -473,21 +473,33 @@ export default function GouvernancePage() {
 
       {/* TOAST */}
       {toast && (
-        <div role="status" aria-live="polite" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 61, display: "flex", alignItems: "center", gap: 9, padding: "10px 14px", borderRadius: 8, background: "var(--ink)", color: "#fff", fontSize: 13, boxShadow: "0 4px 14px rgba(15,15,15,0.16)", maxWidth: "calc(100% - 32px)" }}>
-          <Check size={15} strokeWidth={2.4} color="var(--accent)" style={{ flexShrink: 0 }} />
+        <div role="status" aria-live="polite" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[61] flex items-center gap-[9px] p-[10px_14px] rounded-lg bg-ink text-white text-[13px] max-w-[calc(100%-32px)]" style={{ boxShadow: "0 4px 14px rgba(15,15,15,0.16)" }}>
+          <Check size={15} strokeWidth={2.4} color="var(--accent)" className="shrink-0" />
           <span>{toast}</span>
         </div>
       )}
-    </div>
+    </WeaveShell>
   );
 }
 
 function Count({ children }: { children: ReactNode }) {
-  return <span style={{ flexShrink: 0, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "var(--lvl-org)", color: "#fff", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{children}</span>;
+  return <span className="shrink-0 min-w-[18px] h-[18px] px-[5px] rounded-full bg-lvl-org text-white text-[10px] font-semibold inline-flex items-center justify-center">{children}</span>;
 }
 
 function Toggle({ on, aria, onClick }: { on: boolean; aria: string; onClick: () => void }) {
-  const toggle: CSSProperties = { width: 38, height: 22, borderRadius: 999, border: "none", cursor: "pointer", padding: 2, background: on ? "var(--accent)" : "var(--line)", display: "inline-flex", alignItems: "center", justifyContent: on ? "flex-end" : "flex-start", transition: "background 150ms ease" };
-  const knob: CSSProperties = { width: 18, height: 18, borderRadius: "50%", background: "#fff", display: "block", boxShadow: "0 1px 2px rgba(0,0,0,0.15)" };
-  return <button type="button" aria-pressed={on} aria-label={aria} onClick={onClick} style={toggle}><span style={knob} /></button>;
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={aria}
+      onClick={onClick}
+      className="w-[38px] h-[22px] rounded-full border-none cursor-pointer p-0.5 inline-flex items-center transition-colors duration-150"
+      style={{ background: on ? "var(--accent)" : "var(--line)", justifyContent: on ? "flex-end" : "flex-start" }}
+    >
+      <span
+        className="w-[18px] h-[18px] rounded-full bg-white block"
+        style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.15)" }}
+      />
+    </button>
+  );
 }

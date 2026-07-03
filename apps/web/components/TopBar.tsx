@@ -52,7 +52,7 @@ export function TopBar({
           <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-accent" : "bg-muted"}`} />{connected ? "en direct" : "hors ligne"}
         </span>
         <button onClick={onReset} disabled={pendingAction === "reset"} className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink-soft hover:bg-subtle disabled:opacity-60">{pendingAction === "reset" ? "Réinitialisation…" : "Réinitialiser"}</button>
-        <button data-tour="simulate" onClick={onSimulate} disabled={pendingAction === "simulate"} className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-deep disabled:opacity-60">{pendingAction === "simulate" ? "Simulation…" : "Simuler l&apos;activité"}</button>
+        <button data-tour="simulate" onClick={onSimulate} disabled={pendingAction === "simulate"} className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-deep disabled:opacity-60">{pendingAction === "simulate" ? "Simulation…" : "Simuler l'activité"}</button>
       </div>
     </header>
   );

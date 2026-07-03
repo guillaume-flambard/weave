@@ -155,7 +155,18 @@ cargo test -p weave-api                                 # tests API ciblés
 ```bash
 pnpm --dir apps/web install
 pnpm --dir apps/web exec playwright install
-pnpm --dir apps/web test:e2e
+pnpm --dir apps/web test:e2e tests/e2e/smoke.spec.ts
+```
+
+### Hero E2E (API + UI, ~3–4 min)
+
+Nécessite Postgres et `weave-api` (provider `heuristic` OK sans Ollama).
+
+```bash
+./scripts/e2e-hero.sh
+# ou manuellement :
+# WEAVE_E2E_URL=http://127.0.0.1:3200 WEAVE_E2E_API=http://127.0.0.1:8787 \
+#   pnpm --dir apps/web exec playwright test tests/e2e/hero.spec.ts
 ```
 
 ### CI
@@ -178,8 +189,8 @@ Le dépôt inclut un workflow GitHub Actions minimal :
 
 ## Limites connues
 
-- le scénario E2E Playwright complet reste volontairement non stabilisé, car l'UI actuelle doit être refondue
-- la CI n'exécute pas encore de smoke E2E navigateur
+- le scénario hero E2E est couvert par `tests/e2e/hero.spec.ts` (job CI `e2e-hero`) mais reste sensible à la latence de simulation
+- la CI exécute le smoke navigateur ; le hero E2E tourne dans un job dédié avec Postgres + API
 - quelques vérifications manuelles `curl` restent utiles pour valider auth/CORS en environnement local ou preview
 
 ## Roadmap
