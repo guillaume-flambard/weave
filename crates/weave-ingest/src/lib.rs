@@ -18,7 +18,10 @@ mod simulate;
 mod notion;
 pub use simulate::{generate_events, preset_by_org, presets};
 pub use slack::{parse_history as parse_slack_history, SlackConnector};
-pub use notion::{parse_page_blocks, rich_text_to_plain};
+pub use notion::{
+    db_row_to_event, page_to_event, parse_page_blocks, rich_text_to_plain, scope_from_ids,
+    NotionConnector, NotionScope,
+};
 
 /// A source of events. The seam where a real Slack/GitHub/Notion connector plugs in.
 #[async_trait]
