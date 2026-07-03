@@ -134,13 +134,28 @@ fallback hash local. `WEAVE_EMBED_PROVIDER = ollama | hash`.
 ollama pull nomic-embed-text
 ```
 
-## Connecteur Slack (lecture seule, Phase 0)
+## Connectors (real ingest, Phase 0)
+
+### Slack (lecture seule)
 
 ```bash
-export SLACK_BOT_TOKEN=xoxb-...     # scopes: channels:history, users:read
+export SLACK_BOT_TOKEN=xoxb-...     # scopes: channels:history, groups:history, users:read
 export SLACK_CHANNEL=C0123456789
 curl -X POST http://127.0.0.1:8787/ingest/slack   # même pipeline, vrais messages
 ```
+
+Unset `SLACK_BOT_TOKEN` → le démo rejoue des événements Slack seed à la place.
+
+### Notion (pages et bases de données)
+
+```bash
+export NOTION_TOKEN=secret_...      # integration token from https://www.notion.so/my-integrations
+export NOTION_PAGE_IDS=...          # optional: comma-separated page ids (empty = tout ce qui est partagé)
+export NOTION_DATABASE_IDS=...      # optional: comma-separated database ids
+```
+
+Create an internal integration, share the target pages/databases with it, and set `NOTION_TOKEN`. 
+Unset `NOTION_TOKEN` → le démo rejoue des événements Notion seed à la place.
 
 ## Tests & éval
 
