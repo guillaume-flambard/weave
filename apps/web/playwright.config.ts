@@ -1,7 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.WEAVE_E2E_URL || "http://127.0.0.1:3200";
-const apiURL = process.env.WEAVE_E2E_API || "http://127.0.0.1:8787";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -20,9 +19,6 @@ export default defineConfig({
           url: baseURL,
           reuseExistingServer: !process.env.CI,
           timeout: 120000,
-          env: {
-            NEXT_PUBLIC_WEAVE_API: apiURL,
-          },
         },
       }),
   projects: [

@@ -6,11 +6,11 @@ import {
   Sparkles, Building2, Zap, FileText, Brain, Route, Users, TrendingUp, Shield,
   Pin, Flag, Copy, Check,
 } from "lucide-react";
-import { Button, Badge, Avatar, StatusIndicator } from "../../components/ui/primitives";
-import { Panel, ProgressBar } from "../../components/ui/workspace-ui";
-import { WeaveShell } from "../../components/layout/weave-shell";
-import { useWeaveProject } from "../../hooks/use-weave-project";
-import { useViewport } from "../../hooks/use-viewport";
+import { Button, Badge, Avatar, StatusIndicator } from "../../../components/ui/primitives";
+import { Panel, ProgressBar } from "../../../components/ui/workspace-ui";
+import { useT } from "../../../lib/i18n/context";
+import { useWeaveProject } from "../../../hooks/use-weave-project";
+import { useViewport } from "../../../hooks/use-viewport";
 
 // Compétence — skill detail, ported from Claude Design (Compétence.dc.html).
 // Trigger, body (copy), sources, provenance/promotion stepper, referents,
@@ -58,6 +58,7 @@ function useViewportWidth() {
 
 function CompetencePageInner() {
   const w = useViewportWidth();
+  const tr = useT();
   const weave = useWeaveProject();
   const params = useSearchParams();
   const skillName = params.get("name");
@@ -95,7 +96,10 @@ function CompetencePageInner() {
     return (
       <Shell w={w}>
         <div className="max-w-[1360px] mx-auto p-6 text-center">
-          <p className="text-ink-soft">Aucune compétence — simulez l&apos;activité sur l&apos;<a href="/">espace de travail</a>.</p>
+          <p className="text-ink-soft">
+            {tr("skill.emptyBody")}
+            <a href="/" className="text-accent">{tr("skill.emptyLink")}</a>.
+          </p>
         </div>
       </Shell>
     );
@@ -269,12 +273,8 @@ export default function CompetencePage() {
   );
 }
 
-function Shell({ w, children }: { w: number; children: React.ReactNode }) {
-  return (
-    <WeaveShell width={w} connected llm="Ollama (local)">
-      {children}
-    </WeaveShell>
-  );
+function Shell({ children }: { w: number; children: React.ReactNode }) {
+  return <>{children}</>;
 }
 
 function Step({ dot, ring, line = false, last = false, label, detail, muted = false, promoted = false, pulse = false, progress }:

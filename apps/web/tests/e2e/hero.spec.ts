@@ -22,7 +22,7 @@ test.describe("Hero demo (API)", () => {
     }
 
     await request.post(`${API}/reset?project=${PROJECT}`);
-    await page.goto("/?tour=off");
+    await page.goto("/espace-de-travail?tour=off");
 
     const simulate = page.locator("button[data-tour='simulate']");
     await expect(simulate).toBeVisible({ timeout: 15_000 });

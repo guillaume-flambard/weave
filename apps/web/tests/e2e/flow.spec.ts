@@ -38,9 +38,9 @@ test.describe("Parcours démo complet", () => {
     watch(page, issues, () => step);
 
     // 1 — workspace: simulate → skill emerges
-    step = "reset+load /";
+    step = "reset+load /espace-de-travail";
     await request.post(`${API}/reset?project=${PROJECT}`);
-    await page.goto("/?tour=off");
+    await page.goto("/espace-de-travail?tour=off");
     await expect(page.locator("button[data-tour='simulate']")).toBeEnabled({ timeout: 30_000 });
 
     step = "simulate";

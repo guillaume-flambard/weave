@@ -61,11 +61,352 @@
 .wv-scale-in { animation: wvScaleIn 200ms ease-out both; }
 @keyframes wvSlideInRight { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
 .wv-slide-in-right { animation: wvSlideInRight 250ms ease-out both; }
+
+/* Notion-style sidebar nav */
+.wv-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: transparent;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.wv-nav-link:hover {
+  background: var(--subtle);
+}
+.wv-nav-link[data-active="true"] {
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+.wv-nav-link .wv-nav-icon {
+  display: inline-flex;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 120ms ease;
+}
+.wv-nav-link:hover .wv-nav-icon {
+  color: var(--ink-soft);
+}
+.wv-nav-link[data-active="true"] .wv-nav-icon {
+  color: var(--accent);
+}
+
+.wv-connector-primary {
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
+}
+
+.wv-chat-canvas {
+  background: var(--bg);
+  min-height: 0;
+}
+
+.wv-chat-composer {
+  background: linear-gradient(to top, var(--bg) 85%, transparent);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* ---- Chat motion (Claude / ChatGPT–inspired, lightweight) ---- */
+@keyframes wvChatFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wvChatUserIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wvChatComposerIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wvChatThinkingPulse {
+  0%, 70%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.92);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+}
+
+@keyframes wvChatShimmer {
+  0% { background-position: -120% 0; }
+  100% { background-position: 220% 0; }
+}
+
+.wv-chat-scroll {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wv-chat-welcome-in {
+  animation: wvChatFadeUp 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wv-chat-welcome-in p {
+  animation: wvChatFadeUp 520ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+}
+
+.wv-chat-turn {
+  animation: wvChatFadeUp 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wv-chat-user-in {
+  animation: wvChatUserIn 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wv-chat-block-in {
+  animation: wvChatFadeUp 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--wv-chat-delay, 0ms);
+}
+
+.wv-chat-chip-in {
+  animation: wvChatFadeUp 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--wv-chip-delay, 0ms);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), background 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.wv-chat-chip-in:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(15, 15, 15, 0.06);
+}
+
+.wv-chat-chip-in:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.wv-chat-composer-shell {
+  animation: wvChatComposerIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wv-chat-composer-field {
+  transition:
+    border-color 220ms ease,
+    box-shadow 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wv-chat-composer-field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  box-shadow:
+    0 4px 24px rgba(35, 131, 226, 0.1),
+    0 0 0 3px color-mix(in srgb, var(--accent-soft) 80%, transparent);
+  transform: translateY(-1px);
+}
+
+.wv-chat-send-btn {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease,
+    background 200ms ease,
+    box-shadow 220ms ease;
+}
+
+.wv-chat-send-btn:not(:disabled) {
+  box-shadow: 0 2px 8px rgba(55, 53, 47, 0.18);
+}
+
+.wv-chat-send-btn:not(:disabled):hover {
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(55, 53, 47, 0.22);
+}
+
+.wv-chat-send-btn:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.wv-chat-send-btn:disabled {
+  transform: scale(0.96);
+  opacity: 0.35;
+}
+
+.wv-chat-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--subtle);
+  border: 1px solid var(--line-soft);
+}
+
+.wv-chat-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: wvChatThinkingPulse 1.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.wv-chat-block {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--surface);
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms ease;
+}
+
+.wv-chat-block:hover {
+  background: color-mix(in srgb, var(--subtle) 55%, var(--surface));
+}
+
+.wv-chat-block-in:hover .wv-chat-block {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 12px rgba(15, 15, 15, 0.04);
+}
+
+.wv-chat-feed-in {
+  animation: wvChatFadeUp 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.wv-chat-progress-bar {
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wv-chat-hint {
+  animation: wvChatFadeUp 400ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
+@keyframes wvSlashMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.wv-slash-menu {
+  animation: wvSlashMenuIn 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom center;
+}
+
+.wv-slash-menu-item {
+  transition: background 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wv-chat-scroll {
+    scroll-behavior: auto;
+  }
+  .wv-chat-welcome-in,
+  .wv-chat-welcome-in p,
+  .wv-chat-turn,
+  .wv-chat-user-in,
+  .wv-chat-block-in,
+  .wv-chat-chip-in,
+  .wv-chat-composer-shell,
+  .wv-chat-feed-in,
+  .wv-chat-hint,
+  .wv-chat-thinking-dot,
+  .wv-slash-menu {
+    animation: none !important;
+  }
+  .wv-chat-composer-field:focus-within,
+  .wv-chat-chip-in:hover:not(:disabled),
+  .wv-chat-send-btn:not(:disabled):hover,
+  .wv-chat-block-in:hover .wv-chat-block {
+    transform: none;
+  }
+}
+
+/* Mobile drawer */
+.wv-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+}
+.wv-drawer-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 15, 15, 0.35);
+  animation: wvDrawerOverlayIn 200ms ease-out both;
+}
+.wv-drawer-wrap {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 8px 28px rgba(15, 15, 15, 0.18);
+  animation: wvDrawerSlideIn 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes wvDrawerOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes wvDrawerSlideIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+/* Settings sub-nav (governance) */
+.wv-settings-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+.wv-settings-nav-btn:hover {
+  background: var(--subtle);
+}
+.wv-settings-nav-btn[data-active="true"] {
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wv-shimmer, .wv-pulse, .wv-spin,
   .animate-emerge, .weave-emerge,
-  .wv-fade-in, .wv-slide-up, .wv-scale-in, .wv-slide-in-right {
+  .wv-fade-in, .wv-slide-up, .wv-scale-in, .wv-slide-in-right,
+  .wv-drawer-overlay, .wv-drawer-wrap {
     animation: none;
+  }
+  .wv-drawer-wrap {
+    transform: none;
   }
 }
 
@@ -75,6 +416,8 @@ body {
   color: var(--color-ink);
   font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 ::selection {

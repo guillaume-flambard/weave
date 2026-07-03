@@ -9,18 +9,18 @@ export function Panel({ title, icon, count, subtitle, actions, bodyStyle, childr
   { title: string; icon?: ReactNode; count?: number; subtitle?: string; actions?: ReactNode; bodyStyle?: CSSProperties; children: ReactNode }) {
   return (
     <div className="border border-line rounded-2xl bg-surface flex flex-col min-w-0">
-      <div className="py-3 px-[14px] border-b border-line-soft">
+      <div className="py-3.5 px-4 border-b border-line-soft">
         <div className="flex items-center gap-2">
           {icon && <span className="inline-flex text-ink-soft">{icon}</span>}
           <h2 className="m-0 text-sm font-semibold text-ink flex-1 min-w-0">{title}</h2>
           {count !== undefined && (
-            <span className="text-[11px] text-muted bg-subtle rounded-full px-2 py-[1px] tabular-nums">{count}</span>
+            <span className="text-[11px] text-muted bg-subtle rounded-full px-2 py-px tabular-nums">{count}</span>
           )}
           {actions}
         </div>
         {subtitle && <p className="m-0 mt-1.5 text-[11.5px] text-muted leading-[1.45]">{subtitle}</p>}
       </div>
-      <div className="p-[14px]" style={bodyStyle}>{children}</div>
+      <div className="p-4" style={bodyStyle}>{children}</div>
     </div>
   );
 }

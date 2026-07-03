@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AppProviders } from "../components/providers";
 
 export const metadata: Metadata = {
   title: "Weave — Cognitive Runtime",
@@ -9,8 +10,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr">
-      <body className="min-h-screen antialiased">{children}</body>
+    <html lang="fr" suppressHydrationWarning>
+      <body className="min-h-screen antialiased">
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }

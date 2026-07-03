@@ -2,13 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { askMemory, approveAgent as approveAgentRequest, API, getAgents, getFacts, getHealth, getOrgConfig, getPresets, getSkills, getStats, injectMessage, loadOrg, resetProject, simulateOrg } from "../lib/api";
+import { useLocale } from "../lib/i18n/context";
 import type { Agent, Answer, Fact, Feed, OrgCfg, Skill, WeaveStats } from "../lib/types";
 import type { Scope } from "../lib/scope";
 
 export type { Scope };
 export type Flash = { msg: string; kind: "skill" | "agent" | "org" } | null;
 
+export type SimProgress = {
+  /** Total events in store when simulation started */
+  startEvents: number;
+  /** Number of new messages being processed in this batch */
+  batchSize: number;
+  events: number;
+  /** Events ingested this batch (from live SSE), used when stats lag */
+  ingested: number;
+  facts: number;
+  skills: number;
+};
+
+export function simProgressMetrics(p: SimProgress) {
+  const fromStats = Math.max(0, p.events - p.startEvents);
+  const processed = Math.min(p.batchSize, Math.max(fromStats, p.ingested));
+  const pct = p.batchSize > 0 ? Math.min(100, Math.round((processed / p.batchSize) * 100)) : 100;
+  return { processed, pct, target: p.batchSize };
+}
+
 export function useWeaveDashboard(notifySkillEmerged: () => void) {
+  const { t } = useLocale();
   const [orgId, setOrgId] = useState("pennylane");
   const [org, setOrg] = useState<OrgCfg | null>(null);
   const [presets, setPresets] = useState<OrgCfg[]>([]);
@@ -23,24 +44,38 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const [connected, setConnected] = useState(false);
   const [llm, setLlm] = useState("");
 
-  const [question, setQuestion] = useState("Comment relancer la synchro bancaire ?");
+  const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [asking, setAsking] = useState(false);
 
   const [injectText, setInjectText] = useState("");
   const [pendingAction, setPendingAction] = useState<"simulate" | "reset" | "ask" | "inject" | "approveAgent" | "switchOrg" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [simProgress, setSimProgress] = useState<{ events: number; facts: number; target: number; skills: number } | null>(null);
+  const [simProgress, setSimProgress] = useState<SimProgress | null>(null);
 
-  const normalizeError = (error: unknown) => {
+  const orgIdRef = useRef(orgId);
+  orgIdRef.current = orgId;
+  const notifyRef = useRef(notifySkillEmerged);
+  notifyRef.current = notifySkillEmerged;
+  const tRef = useRef(t);
+  tRef.current = t;
+  const pendingActionRef = useRef(pendingAction);
+  pendingActionRef.current = pendingAction;
+  const finishSimulationRef = useRef<() => void>(() => {});
+
+  const normalizeError = useCallback((error: unknown) => {
     if (error instanceof Error) {
-      if (/Failed to fetch|NetworkError|Load failed/i.test(error.message)) {
-        return "API hors ligne ou inaccessible. Vérifiez que `weave-api` tourne et que `NEXT_PUBLIC_WEAVE_API` est correct.";
+      if (/Failed to fetch|NetworkError|Load failed|INSUFFICIENT_RESOURCES/i.test(error.message)) {
+        return t("errors.apiOffline");
       }
       return error.message;
     }
-    return "Une erreur inattendue est survenue.";
-  };
+    return t("errors.unexpected");
+  }, [t]);
+
+  useEffect(() => {
+    setQuestion((prev) => prev || t("workspace.ask.defaultQuestion"));
+  }, [t]);
 
   const refetch = useCallback(async (id: string) => {
     try {
@@ -51,57 +86,123 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     } catch (error) {
       setErrorMessage(normalizeError(error));
     }
-  }, []);
+  }, [normalizeError]);
 
-  const loadOrgConfig = useCallback(async (id: string) => {
-    const cfg = await getOrgConfig(id);
-    setOrg(cfg);
-  }, []);
+  const finishSimulation = useCallback(() => {
+    setPendingAction(null);
+    setSimProgress(null);
+    void refetch(orgIdRef.current);
+  }, [refetch]);
+  finishSimulationRef.current = finishSimulation;
 
+  // Bootstrap: health + presets once on mount.
   useEffect(() => {
+    let cancelled = false;
     getHealth()
-      .then((d) => setLlm(d.llm || ""))
-      .catch((error) => setErrorMessage(normalizeError(error)));
+      .then((h) => {
+        if (cancelled) return;
+        setLlm(h.llm || "");
+        setConnected(true);
+        setErrorMessage(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setConnected(false);
+        setErrorMessage(normalizeError(error));
+      });
     getPresets()
-      .then(setPresets)
-      .catch((error) => setErrorMessage(normalizeError(error)));
-  }, []);
+      .then((p) => { if (!cancelled) setPresets(p); })
+      .catch(() => { /* non-fatal */ });
+    return () => { cancelled = true; };
+  }, [normalizeError]);
 
-  const throttle = useRef(0);
+  // Reload org-scoped data when org changes (no new SSE).
   useEffect(() => {
-    loadOrgConfig(orgId);
-    refetch(orgId);
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await getOrgConfig(orgId);
+        if (cancelled) return;
+        setOrg(cfg);
+        const [s, f, ag] = await Promise.all([getSkills(orgId), getFacts(orgId), getAgents(orgId)]);
+        if (cancelled) return;
+        setSkills(s);
+        setFacts(f);
+        setAgents(ag);
+      } catch (error) {
+        if (!cancelled) setErrorMessage(normalizeError(error));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orgId, normalizeError]);
+
+  // Single SSE connection for the lifetime of the dashboard.
+  const refetchThrottle = useRef(0);
+  useEffect(() => {
     const es = new EventSource(`${API}/events`);
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
+    let healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleHealthCheck = () => {
+      if (healthCheckTimer) return;
+      healthCheckTimer = setTimeout(() => {
+        healthCheckTimer = null;
+        getHealth()
+          .then((h) => {
+            setLlm(h.llm || "");
+            setConnected(true);
+            setErrorMessage(null);
+          })
+          .catch(() => setConnected(false));
+      }, 5000);
+    };
+
+    es.onopen = () => {
+      setConnected(true);
+      setErrorMessage(null);
+    };
+    es.onerror = () => scheduleHealthCheck();
     es.onmessage = (e) => {
       const ev: Feed = JSON.parse(e.data);
       setFeed((prev) => [ev, ...prev].slice(0, 70));
+      const tr = tRef.current;
+      if (ev.type === "event_ingested" && pendingActionRef.current === "simulate") {
+        setSimProgress((prev) => (prev ? { ...prev, ingested: prev.ingested + 1 } : prev));
+      }
+      if (ev.type === "simulation_complete") {
+        finishSimulationRef.current();
+      }
       if (ev.type === "skill_emerged") {
         const isOrg = (ev.name || "").startsWith("org/");
         setFlash({
           msg: isOrg
-            ? `Compétence d'organisation promue : ${ev.name} — convention partagée entre équipes`
-            : `Compétence née du travail de l'équipe : ${ev.name}`,
+            ? tr("flash.orgSkill", { name: ev.name || "" })
+            : tr("flash.teamSkill", { name: ev.name || "" }),
           kind: isOrg ? "org" : "skill",
         });
         setNewest(ev.name || null);
-        notifySkillEmerged();
+        notifyRef.current();
         setTimeout(() => setFlash(null), 6000);
       }
       if (ev.type === "agent_emerged") {
-        setFlash({ msg: `Agent spécialiste émergé : ${ev.name} (en attente d'approbation)`, kind: "agent" });
+        setFlash({ msg: tr("flash.agent", { name: ev.name || "" }), kind: "agent" });
         setNewest(ev.name || null);
         setTimeout(() => setFlash(null), 6000);
       }
       const now = Date.now();
-      if (now - throttle.current > 500) {
-        throttle.current = now;
-        refetch(orgId);
+      if (now - refetchThrottle.current > 500) {
+        refetchThrottle.current = now;
+        const id = orgIdRef.current;
+        Promise.all([getSkills(id), getFacts(id), getAgents(id)])
+          .then(([s, f, ag]) => { setSkills(s); setFacts(f); setAgents(ag); })
+          .catch(() => { /* SSE-driven refresh is best-effort */ });
       }
     };
-    return () => es.close();
-  }, [loadOrgConfig, notifySkillEmerged, orgId, refetch]);
+
+    return () => {
+      es.close();
+      if (healthCheckTimer) clearTimeout(healthCheckTimer);
+    };
+  }, []);
 
   const switchOrg = useCallback(async (id: string) => {
     setPendingAction("switchOrg");
@@ -116,14 +217,13 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
       setScope({});
       setNewest(null);
       setOrgId(id);
-      await loadOrgConfig(id);
       setTimeout(() => refetch(id), 300);
     } catch (error) {
       setErrorMessage(normalizeError(error));
     } finally {
       setPendingAction(null);
     }
-  }, [loadOrgConfig, refetch]);
+  }, [normalizeError, refetch]);
 
   const simulate = useCallback(async () => {
     setPendingAction("simulate");
@@ -132,13 +232,20 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     try {
       const initial = await getStats(orgId);
       const res = await simulateOrg(orgId) as { events?: number };
-      const target = res.events ?? 66;
-      setSimProgress({ events: initial.events, facts: initial.facts, target, skills: initial.skills.length });
+      const batchSize = res.events ?? 66;
+      setSimProgress({
+        startEvents: initial.events,
+        batchSize,
+        events: initial.events,
+        ingested: 0,
+        facts: initial.facts,
+        skills: initial.skills.length,
+      });
     } catch (error) {
       setErrorMessage(normalizeError(error));
       setPendingAction(null);
     }
-  }, [orgId]);
+  }, [orgId, normalizeError]);
 
   const simProgressRef = useRef(simProgress);
   simProgressRef.current = simProgress;
@@ -149,13 +256,19 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
         const stats = await getStats(orgId);
         const prev = simProgressRef.current;
         if (!prev) return;
-        if (stats.events >= prev.target) {
-          setPendingAction(null);
-          setSimProgress(null);
-          refetch(orgId);
+        if (
+          stats.events >= prev.startEvents + prev.batchSize
+          || prev.ingested >= prev.batchSize
+        ) {
+          finishSimulationRef.current();
           return;
         }
-        setSimProgress({ ...prev, events: stats.events, facts: stats.facts, skills: stats.skills.length });
+        setSimProgress({
+          ...prev,
+          events: stats.events,
+          facts: stats.facts,
+          skills: stats.skills.length,
+        });
       } catch {
         // ignore polling errors during simulation
       }
@@ -177,7 +290,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     } finally {
       setPendingAction(null);
     }
-  }, [orgId, refetch]);
+  }, [orgId, refetch, normalizeError]);
 
   const ask = useCallback(async () => {
     setAsking(true);
@@ -193,7 +306,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
       setAsking(false);
       setPendingAction(null);
     }
-  }, [orgId, question]);
+  }, [orgId, question, normalizeError]);
 
   const approveAgent = useCallback(async (name: string) => {
     setPendingAction("approveAgent");
@@ -206,7 +319,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     } finally {
       setPendingAction(null);
     }
-  }, [orgId, refetch]);
+  }, [orgId, refetch, normalizeError]);
 
   const inject = useCallback(async () => {
     if (!injectText.trim()) return;
@@ -221,7 +334,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     } finally {
       setPendingAction(null);
     }
-  }, [injectText, orgId, refetch, scope.team, scope.workstream]);
+  }, [injectText, orgId, refetch, scope.team, scope.workstream, normalizeError]);
 
   return {
     orgId,

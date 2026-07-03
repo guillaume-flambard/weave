@@ -3,33 +3,30 @@
 import { ReactNode, useState } from "react";
 import { Menu } from "lucide-react";
 import { useLocale } from "../../lib/i18n/context";
+import { useWeaveProject } from "../../hooks/use-weave-project";
+import { useViewport } from "../../hooks/use-viewport";
+import { useShellHeaderContext } from "./shell-header-context";
 import { WeaveSidebar } from "./weave-sidebar";
+import { PageTransition } from "./page-transition";
 
-export function WeaveShell({
-  width,
-  children,
-  connected,
-  llm,
-  subtitle,
-  actions,
-}: {
-  width: number;
-  children: ReactNode;
-  connected?: boolean;
-  llm?: string;
-  subtitle?: string;
-  actions?: ReactNode;
-}) {
+export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useLocale();
+  const { width } = useViewport();
+  const weave = useWeaveProject();
+  const { header } = useShellHeaderContext();
   const desktop = width >= 900;
   const [menuOpen, setMenuOpen] = useState(false);
 
+  const { subtitle, actions } = header;
   const hasTopBar = !desktop || Boolean(subtitle) || Boolean(actions);
 
   return (
     <div
       style={{
         minHeight: "100vh",
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
         display: "flex",
         background: "var(--bg)",
         fontFamily: "var(--font-sans)",
@@ -38,9 +35,9 @@ export function WeaveShell({
         boxSizing: "border-box",
       }}
     >
-      {desktop && <WeaveSidebar connected={connected} llm={llm} variant="static" />}
+      {desktop && <WeaveSidebar connected={weave.connected} llm={weave.llm} variant="static" />}
       {!desktop && menuOpen && (
-        <WeaveSidebar connected={connected} llm={llm} variant="drawer" onClose={() => setMenuOpen(false)} />
+        <WeaveSidebar connected={weave.connected} llm={weave.llm} variant="drawer" onClose={() => setMenuOpen(false)} />
       )}
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
@@ -61,20 +58,22 @@ export function WeaveShell({
                 type="button"
                 onClick={() => setMenuOpen(true)}
                 aria-label={t("nav.main")}
-                style={{ border: "1px solid var(--line)", background: "var(--surface)", borderRadius: 6, height: 34, width: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--ink-soft)", flexShrink: 0 }}
+                className="border border-line bg-surface rounded-md h-[34px] w-[34px] inline-flex items-center justify-center cursor-pointer text-ink-soft shrink-0"
               >
                 <Menu size={18} />
               </button>
             )}
             {subtitle && width >= 640 && (
-              <span style={{ fontSize: 12.5, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{subtitle}</span>
+              <span className="text-[12.5px] text-muted overflow-hidden text-ellipsis whitespace-nowrap min-w-0">{subtitle}</span>
             )}
             {actions && (
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>{actions}</div>
+              <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">{actions}</div>
             )}
           </header>
         )}
-        <main style={{ flex: 1, minWidth: 0 }}>{children}</main>
+        <main style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <PageTransition>{children}</PageTransition>
+        </main>
       </div>
     </div>
   );

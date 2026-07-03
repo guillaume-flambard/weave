@@ -1,18 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 export type ViewportLayout = "3col" | "2col" | "tabs";
 
-export function useViewport() {
-  const [width, setWidth] = useState(1440);
+function subscribe(onChange: () => void) {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
 
-  useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+function getWidth() {
+  return window.innerWidth;
+}
+
+function getServerWidth() {
+  return 900;
+}
+
+export function useViewport() {
+  const width = useSyncExternalStore(subscribe, getWidth, getServerWidth);
 
   const layout: ViewportLayout = width >= 1120 ? "3col" : width >= 768 ? "2col" : "tabs";
   const isTabs = layout === "tabs";

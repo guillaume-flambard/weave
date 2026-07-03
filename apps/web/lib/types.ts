@@ -18,6 +18,8 @@ export type Feed = {
   src?: string;
   dst?: string;
   rel?: string;
+  batch_size?: number;
+  inserted?: number;
 };
 
 export type Skill = {

@@ -1,6 +1,6 @@
 import type { Agent, AgentRun, Answer, Fact, OrgCfg, Skill, WeaveStats } from "./types";
 
-const API = process.env.NEXT_PUBLIC_WEAVE_API || "http://127.0.0.1:8787";
+const API = process.env.NEXT_PUBLIC_WEAVE_API || "/weave-api";
 const API_KEY = process.env.NEXT_PUBLIC_WEAVE_API_KEY || "";
 
 export { API };
@@ -137,5 +137,10 @@ export function runAgent(project: string, agent: string, task: string) {
 export function ingestSlack(project?: string) {
   const q = project ? `?project=${encodeURIComponent(project)}` : "";
   return fetchJson<{ ingested?: number; message?: string }>(`${API}/ingest/slack${q}`, { method: "POST" });
+}
+
+export function ingestNotion(project?: string) {
+  const q = project ? `?project=${encodeURIComponent(project)}` : "";
+  return fetchJson<{ ingested?: number; events?: number; message?: string }>(`${API}/ingest/notion${q}`, { method: "POST" });
 }
 
