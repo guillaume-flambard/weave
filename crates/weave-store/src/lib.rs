@@ -7,6 +7,7 @@
 
 mod ports;
 mod postgres;
+pub mod connections;
 pub mod crypto;
 
 pub use ports::{
@@ -14,4 +15,5 @@ pub use ports::{
     SkillStore, Store,
 };
 pub use postgres::PgStore;
+pub use connections::{Connection, NewConnection};
 pub use crypto::Cipher;

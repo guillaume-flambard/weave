@@ -28,6 +28,11 @@ impl PgStore {
         PgStore { pool }
     }
 
+    /// Borrow the underlying pool (used by sibling modules like `connections`).
+    pub fn pool(&self) -> &sqlx::PgPool {
+        &self.pool
+    }
+
     /// Run embedded migrations. Idempotent.
     pub async fn migrate(&self) -> anyhow::Result<()> {
         sqlx::migrate!("../../migrations").run(&self.pool).await?;
