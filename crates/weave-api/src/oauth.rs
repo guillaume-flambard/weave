@@ -187,6 +187,64 @@ pub(crate) async fn store_tokens(state: &AppState, t: OauthTokens) -> anyhow::Re
         .await
 }
 
+use weave_store::Connection;
+
+const REFRESH_MARGIN_SECS: i64 = 60;
+
+/// Return `conn` unchanged when its token is static or still valid; otherwise
+/// refresh via `oauth.v2.access` (grant_type=refresh_token), persist, and return it.
+pub async fn ensure_fresh(
+    state: &AppState,
+    cfg: &SlackConfig,
+    conn: Connection,
+) -> anyhow::Result<Connection> {
+    let needs_refresh = match conn.expires_at {
+        None => false, // static token: never expires
+        Some(exp) => exp <= Utc::now() + chrono::Duration::seconds(REFRESH_MARGIN_SECS),
+    };
+    if !needs_refresh {
+        return Ok(conn);
+    }
+    let refresh = conn
+        .refresh_token
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("token expired but no refresh_token stored"))?;
+
+    let v: serde_json::Value = reqwest::Client::new()
+        .post(format!("{}/oauth.v2.access", cfg.api_base))
+        .form(&[
+            ("client_id", cfg.client_id.as_str()),
+            ("client_secret", cfg.client_secret.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let mut tokens = parse_oauth_response(&v, Utc::now())?;
+    if tokens.team_id.is_empty() {
+        tokens.team_id = conn.team_id.clone();
+    }
+    // Slack may omit a new refresh_token; keep the old one.
+    if tokens.refresh_token.is_none() {
+        tokens.refresh_token = conn.refresh_token.clone();
+    }
+    store_tokens(state, tokens.clone()).await?;
+
+    Ok(Connection {
+        provider: conn.provider,
+        team_id: if tokens.team_id.is_empty() { conn.team_id } else { tokens.team_id },
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: tokens.expires_at,
+        scopes: if tokens.scopes.is_empty() { conn.scopes } else { tokens.scopes },
+        updated_at: Utc::now(),
+    })
+}
+
 fn urlencode(s: &str) -> String {
     // Minimal application/x-www-form-urlencoded for query values.
     let mut out = String::with_capacity(s.len());

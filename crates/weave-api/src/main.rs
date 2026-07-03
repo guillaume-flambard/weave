@@ -869,6 +869,10 @@ mod tests {
         }))
     }
 
+    fn dummy_runtime(store: Arc<PgStore>) -> Arc<Runtime> {
+        Arc::new(Runtime::new(store, Arc::new(StubLlm), Arc::new(StubEmbedder), 5))
+    }
+
     async fn json_body(response: axum::response::Response) -> Value {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -1270,5 +1274,52 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn ensure_fresh_refreshes_expired_token() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use weave_store::Connection;
+
+        let Some(app) = test_app().await else { return };
+        let _ = app;
+        let mock = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/oauth.v2.access"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "access_token": "xoxe.xoxp-NEW",
+                "refresh_token": "xoxe-1-NEW",
+                "expires_in": 43200,
+                "team": {"id": "T-RF"},
+                "scope": "channels:history"
+            })))
+            .mount(&mock)
+            .await;
+
+        std::env::set_var("SLACK_CLIENT_ID", "cid");
+        std::env::set_var("SLACK_CLIENT_SECRET", "csecret");
+        std::env::set_var("SLACK_SIGNING_SECRET", "ssecret");
+        std::env::set_var("SLACK_API_BASE", mock.uri());
+        let cfg = crate::oauth::SlackConfig::from_env().unwrap();
+
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let store = std::sync::Arc::new(PgStore::from_pool(pool));
+        let cipher = std::sync::Arc::new(weave_store::Cipher::from_base64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap());
+        let state = AppState { runtime: dummy_runtime(store.clone()), store: store.clone(), api_key: None, cipher: cipher.clone() };
+
+        let expired = Connection {
+            provider: "slack".into(),
+            team_id: "T-RF".into(),
+            access_token: "xoxe.xoxp-OLD".into(),
+            refresh_token: Some("xoxe-1-OLD".into()),
+            expires_at: Some(chrono::Utc::now() - chrono::Duration::minutes(5)),
+            scopes: "channels:history".into(),
+            updated_at: chrono::Utc::now(),
+        };
+        let fresh = crate::oauth::ensure_fresh(&state, &cfg, expired).await.unwrap();
+        assert_eq!(fresh.access_token, "xoxe.xoxp-NEW");
     }
 }
