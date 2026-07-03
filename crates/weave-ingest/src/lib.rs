@@ -15,8 +15,10 @@ use weave_core::Event;
 
 mod slack;
 mod simulate;
+mod notion;
 pub use simulate::{generate_events, preset_by_org, presets};
 pub use slack::{parse_history as parse_slack_history, SlackConnector};
+pub use notion::{parse_page_blocks, rich_text_to_plain};
 
 /// A source of events. The seam where a real Slack/GitHub/Notion connector plugs in.
 #[async_trait]
