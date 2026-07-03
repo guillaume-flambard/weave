@@ -18,7 +18,8 @@ use tokio_stream::{Stream, StreamExt};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use weave_ingest::{
-    generate_events, preset_by_org, presets, seed_events, notion_seed_events, Connector, SlackConnector,
+    generate_events, preset_by_org, presets, scope_from_ids, seed_events, notion_seed_events,
+    Connector, NotionConnector, SlackConnector,
 };
 use weave_llm::{
     ClaudeLlm, EmbeddingGateway, HashEmbedder, HeuristicLlm, LlmGateway, OllamaEmbedder, OllamaLlm,
@@ -484,12 +485,29 @@ async fn ingest_notion(
 ) -> Result<Json<Value>, AppError> {
     require_api_key(&state, &headers)?;
     let project = project_of(&q);
-    let mut events = notion_seed_events();
-    for event in &mut events {
-        event.project = project.clone();
-    }
+    let token = std::env::var("NOTION_TOKEN").ok().filter(|t| !t.trim().is_empty());
+
+    let events = match token {
+        Some(token) => {
+            let scope = scope_from_ids(
+                std::env::var("NOTION_PAGE_IDS").ok().as_deref(),
+                std::env::var("NOTION_DATABASE_IDS").ok().as_deref(),
+            );
+            tracing::info!(project = %project, source = "notion", "notion live ingest requested");
+            let connector = NotionConnector::new(token, project.clone(), scope);
+            connector.poll().await? // surface auth/permission errors now
+        }
+        None => {
+            let mut events = notion_seed_events();
+            for event in &mut events {
+                event.project = project.clone();
+            }
+            tracing::info!(project = %project, source = "notion", events = events.len(), "notion seed replay (no token)");
+            events
+        }
+    };
+
     let n = events.len();
-    tracing::info!(project = %project, source = "notion", events = n, "notion ingest requested");
     let runtime = state.runtime.clone();
     tokio::spawn(async move {
         for event in events {
@@ -922,6 +940,32 @@ mod tests {
         let body = json_body(response).await;
         assert_eq!(body["status"], "ok");
         assert_eq!(body["llm"], "stub");
+    }
+
+    #[tokio::test]
+    async fn ingest_notion_without_token_replays_seed() {
+        std::env::remove_var("NOTION_TOKEN");
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/ingest/notion?project=pennylane")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let v = json_body(response).await;
+        assert_eq!(v["source"], "notion");
+        assert_eq!(v["status"], "ingesting");
+        assert_eq!(v["events"], weave_ingest::notion_seed_events().len());
     }
 
     #[tokio::test]
