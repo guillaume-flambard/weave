@@ -71,6 +71,134 @@ pub fn parse_oauth_response(v: &serde_json::Value, now: DateTime<Utc>) -> anyhow
     Ok(OauthTokens { access_token, refresh_token, expires_at, team_id, scopes })
 }
 
+use crate::AppState;
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Redirect, Response};
+use serde::Deserialize;
+use weave_store::NewConnection;
+
+/// Slack OAuth app config, sourced from the environment.
+#[derive(Clone)]
+pub struct SlackConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub signing_secret: String,
+    pub redirect_uri: String,
+    pub scopes: String,
+    pub api_base: String,
+}
+
+impl SlackConfig {
+    /// Present only when the required app credentials are configured.
+    pub fn from_env() -> Option<SlackConfig> {
+        let nonempty = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+        Some(SlackConfig {
+            client_id: nonempty("SLACK_CLIENT_ID")?,
+            client_secret: nonempty("SLACK_CLIENT_SECRET")?,
+            signing_secret: nonempty("SLACK_SIGNING_SECRET")?,
+            redirect_uri: nonempty("SLACK_REDIRECT_URI")
+                .unwrap_or_else(|| "http://localhost:8787/oauth/slack/callback".into()),
+            scopes: nonempty("SLACK_OAUTH_SCOPES")
+                .unwrap_or_else(|| "channels:history,groups:history,users:read".into()),
+            api_base: nonempty("SLACK_API_BASE").unwrap_or_else(|| "https://slack.com/api".into()),
+        })
+    }
+}
+
+/// Exchange an authorization code for tokens via `oauth.v2.access`.
+pub async fn exchange_code(cfg: &SlackConfig, code: &str) -> anyhow::Result<OauthTokens> {
+    let v: serde_json::Value = reqwest::Client::new()
+        .post(format!("{}/oauth.v2.access", cfg.api_base))
+        .form(&[
+            ("client_id", cfg.client_id.as_str()),
+            ("client_secret", cfg.client_secret.as_str()),
+            ("code", code),
+            ("redirect_uri", cfg.redirect_uri.as_str()),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    parse_oauth_response(&v, Utc::now())
+}
+
+#[derive(Deserialize)]
+pub struct CallbackQuery {
+    pub code: String,
+    pub state: String,
+}
+
+/// Redirect the browser to Slack's consent screen with a signed CSRF state.
+pub async fn authorize(State(state): State<AppState>) -> Response {
+    let Some(cfg) = SlackConfig::from_env() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "slack oauth not configured").into_response();
+    };
+    let _ = state; // AppState kept for a uniform handler signature
+    let csrf = sign_state(&cfg.signing_secret, Utc::now().timestamp());
+    let url = format!(
+        "https://slack.com/oauth/v2/authorize?client_id={}&scope={}&redirect_uri={}&state={}",
+        urlencode(&cfg.client_id),
+        urlencode(&cfg.scopes),
+        urlencode(&cfg.redirect_uri),
+        urlencode(&csrf),
+    );
+    Redirect::temporary(&url).into_response()
+}
+
+/// Handle Slack's redirect back: verify state, exchange the code, store tokens.
+pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQuery>) -> Response {
+    let Some(cfg) = SlackConfig::from_env() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "slack oauth not configured").into_response();
+    };
+    if !verify_state(&cfg.signing_secret, &q.state, Utc::now().timestamp()) {
+        return (StatusCode::BAD_REQUEST, "invalid state").into_response();
+    }
+    let tokens = match exchange_code(&cfg, &q.code).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("slack code exchange failed: {e}");
+            return (StatusCode::BAD_GATEWAY, "slack code exchange failed").into_response();
+        }
+    };
+    if let Err(e) = store_tokens(&state, tokens).await {
+        tracing::error!("store slack connection failed: {e}");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "could not store connection").into_response();
+    }
+    (StatusCode::OK, "Slack connected. You can close this tab.").into_response()
+}
+
+/// Persist normalized tokens as the active Slack connection.
+pub(crate) async fn store_tokens(state: &AppState, t: OauthTokens) -> anyhow::Result<()> {
+    state
+        .store
+        .upsert_connection(
+            &state.cipher,
+            &NewConnection {
+                provider: "slack".into(),
+                team_id: if t.team_id.is_empty() { "default".into() } else { t.team_id },
+                access_token: t.access_token,
+                refresh_token: t.refresh_token,
+                expires_at: t.expires_at,
+                scopes: t.scopes,
+            },
+        )
+        .await
+}
+
+fn urlencode(s: &str) -> String {
+    // Minimal application/x-www-form-urlencoded for query values.
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

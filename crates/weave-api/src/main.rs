@@ -37,6 +37,7 @@ struct AppState {
     runtime: Arc<Runtime>,
     store: Arc<PgStore>,
     api_key: Option<String>,
+    cipher: Arc<weave_store::Cipher>,
 }
 
 #[tokio::main]
@@ -136,10 +137,16 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("LLM gateway: {}", runtime.llm_name());
     runtime.seed_predefined_agents(DEFAULT_PROJECT).await?;
 
+    let cipher = Arc::new(
+        weave_store::Cipher::from_env()
+            .map_err(|e| anyhow::anyhow!("WEAVE_ENC_KEY: {e}"))?,
+    );
+
     let state = AppState {
         runtime,
         store,
         api_key,
+        cipher,
     };
 
     let app = build_app(state);
@@ -172,6 +179,8 @@ fn build_app(state: AppState) -> Router {
         .route("/agents/approve", post(approve_agent))
         .route("/agents/run", post(run_agent))
         .route("/mcp", post(mcp))
+        .route("/oauth/slack/authorize", get(oauth::authorize))
+        .route("/oauth/slack/callback", get(oauth::callback))
         .layer(cors_layer())
         .with_state(state)
 }
@@ -849,10 +858,14 @@ mod tests {
             Arc::new(StubEmbedder),
             5,
         ));
+        let cipher = Arc::new(
+            weave_store::Cipher::from_base64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap(),
+        );
         Some(build_app(AppState {
             runtime,
             store,
             api_key: None,
+            cipher,
         }))
     }
 
@@ -1223,5 +1236,39 @@ mod tests {
 
         assert_eq!(json_body(agents_a).await[0]["status"], "active");
         assert_eq!(json_body(agents_b).await[0]["status"], "pending");
+    }
+
+    #[tokio::test]
+    async fn slack_callback_stores_connection() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let Some(app) = test_app().await else { return };
+        let mock = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/oauth.v2.access"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "access_token": "xoxe.xoxp-live",
+                "refresh_token": "xoxe-1-live",
+                "expires_in": 43200,
+                "team": {"id": "T-CB"},
+                "scope": "channels:history"
+            })))
+            .mount(&mock)
+            .await;
+
+        std::env::set_var("SLACK_CLIENT_ID", "cid");
+        std::env::set_var("SLACK_CLIENT_SECRET", "csecret");
+        std::env::set_var("SLACK_SIGNING_SECRET", "ssecret");
+        std::env::set_var("SLACK_API_BASE", mock.uri());
+
+        let state = crate::oauth::sign_state("ssecret", chrono::Utc::now().timestamp());
+        let uri = format!("/oauth/slack/callback?code=abc&state={state}");
+        let resp = app
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
     }
 }
