@@ -181,6 +181,7 @@ fn build_app(state: AppState) -> Router {
         .route("/mcp", post(mcp))
         .route("/oauth/slack/authorize", get(oauth::authorize))
         .route("/oauth/slack/callback", get(oauth::callback))
+        .route("/connections/slack/import", post(oauth::import_from_env))
         .layer(cors_layer())
         .with_state(state)
 }
@@ -1271,6 +1272,42 @@ mod tests {
         let uri = format!("/oauth/slack/callback?code=abc&state={state}");
         let resp = app
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn import_from_env_stores_connection() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let Some(app) = test_app().await else { return };
+        let mock = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/auth.test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "team_id": "T-IMP"
+            })))
+            .mount(&mock)
+            .await;
+
+        std::env::set_var("SLACK_CLIENT_ID", "cid");
+        std::env::set_var("SLACK_CLIENT_SECRET", "csecret");
+        std::env::set_var("SLACK_SIGNING_SECRET", "ssecret");
+        std::env::set_var("SLACK_API_BASE", mock.uri());
+        std::env::set_var("SLACK_ACCESS_TOKEN", "xoxe.xoxp-imported");
+        std::env::set_var("SLACK_REFRESH_TOKEN", "xoxe-1-imported");
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/connections/slack/import")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);

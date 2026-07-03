@@ -257,6 +257,71 @@ fn urlencode(s: &str) -> String {
     out
 }
 
+use axum::Json;
+
+#[derive(Deserialize, Default)]
+pub struct ImportBody {
+    /// Optional lifetime in seconds; when set, forces the refresh path to be exercised.
+    #[serde(default)]
+    pub expires_in: Option<i64>,
+}
+
+/// Seed the Slack connection from `SLACK_ACCESS_TOKEN`/`SLACK_REFRESH_TOKEN` in the
+/// environment, validating the token with `auth.test`. Bridges live testing before
+/// the connect UI exists.
+pub async fn import_from_env(
+    State(state): State<AppState>,
+    body: Option<Json<ImportBody>>,
+) -> Response {
+    let Some(cfg) = SlackConfig::from_env() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "slack oauth not configured").into_response();
+    };
+    let nonempty = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let Some(access) = nonempty("SLACK_ACCESS_TOKEN") else {
+        return (StatusCode::BAD_REQUEST, "SLACK_ACCESS_TOKEN not set").into_response();
+    };
+    let refresh = nonempty("SLACK_REFRESH_TOKEN");
+    let expires_in = body.and_then(|b| b.0.expires_in);
+
+    // Validate + resolve team_id via auth.test.
+    let team_id = match auth_test(&cfg, &access).await {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!("slack auth.test failed: {e}");
+            return (StatusCode::BAD_GATEWAY, "slack token rejected by auth.test").into_response();
+        }
+    };
+
+    let tokens = OauthTokens {
+        access_token: access,
+        refresh_token: refresh,
+        expires_at: expires_in.map(|s| Utc::now() + chrono::Duration::seconds(s)),
+        team_id,
+        scopes: cfg.scopes.clone(),
+    };
+    if let Err(e) = store_tokens(&state, tokens).await {
+        tracing::error!("store imported slack connection failed: {e}");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "could not store connection").into_response();
+    }
+    (StatusCode::OK, axum::Json(serde_json::json!({"status": "imported"}))).into_response()
+}
+
+/// Resolve the workspace id for a token; also validates the token is live.
+pub(crate) async fn auth_test(cfg: &SlackConfig, token: &str) -> anyhow::Result<String> {
+    let v: serde_json::Value = reqwest::Client::new()
+        .post(format!("{}/auth.test", cfg.api_base))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    if v["ok"].as_bool() != Some(true) {
+        anyhow::bail!("auth.test error: {}", v["error"]);
+    }
+    Ok(v["team_id"].as_str().unwrap_or("default").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
