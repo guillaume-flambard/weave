@@ -105,6 +105,79 @@ pub fn page_to_event(page: &serde_json::Value, text: String, project: &str) -> E
     }
 }
 
+/// A compact "Name: value" line for a database property, or None if the type is
+/// the row title or unsupported.
+#[allow(dead_code)]
+fn summarize_property(name: &str, prop: &serde_json::Value) -> Option<String> {
+    let ty = prop["type"].as_str()?;
+    let value = match ty {
+        "title" => return None,
+        "rich_text" => rich_text_to_plain(&prop["rich_text"]),
+        "select" => prop["select"]["name"].as_str().unwrap_or_default().to_string(),
+        "status" => prop["status"]["name"].as_str().unwrap_or_default().to_string(),
+        "multi_select" => prop["multi_select"]
+            .as_array()
+            .map(|opts| {
+                opts.iter()
+                    .filter_map(|o| o["name"].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+        "date" => prop["date"]["start"].as_str().unwrap_or_default().to_string(),
+        "people" => prop["people"]
+            .as_array()
+            .map(|ppl| {
+                ppl.iter()
+                    .filter_map(|p| p["name"].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+        "number" => match prop["number"].as_f64() {
+            Some(n) => n.to_string(),
+            None => return None,
+        },
+        "checkbox" => if prop["checkbox"].as_bool().unwrap_or(false) { "oui" } else { "non" }.to_string(),
+        _ => return None,
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(format!("{name}: {value}"))
+}
+
+/// Map a database row (a page object from `databases/{id}/query`) to an event.
+#[allow(dead_code)]
+pub fn db_row_to_event(row: &serde_json::Value, project: &str) -> Event {
+    let title = page_title(row);
+    let mut parts = Vec::new();
+    if let Some(props) = row["properties"].as_object() {
+        for (name, prop) in props {
+            if let Some(line) = summarize_property(name, prop) {
+                parts.push(line);
+            }
+        }
+    }
+    let text = if parts.is_empty() {
+        title.clone()
+    } else {
+        format!("{title} — {}", parts.join(" · "))
+    };
+    let id = row["id"].as_str().unwrap_or("").to_string();
+    Event {
+        id: Uuid::new_v4(),
+        source: "notion".into(),
+        ts: ts_of(row),
+        actor: actor_of(row),
+        project: project.to_string(),
+        kind: "doc_edit".into(),
+        payload: serde_json::json!({ "text": text, "topic": title, "notion_id": id }),
+        confidence: 1.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +242,61 @@ mod tests {
         let page = json!({ "id": "p", "properties": {} });
         let ev = page_to_event(&page, "x".to_string(), "proj");
         assert_eq!(ev.actor, "notion");
+    }
+
+    #[test]
+    fn summarize_handles_common_property_types() {
+        assert_eq!(
+            summarize_property("Statut", &json!({ "type": "status", "status": { "name": "En cours" } })),
+            Some("Statut: En cours".to_string())
+        );
+        assert_eq!(
+            summarize_property("Équipe", &json!({ "type": "select", "select": { "name": "Data" } })),
+            Some("Équipe: Data".to_string())
+        );
+        assert_eq!(
+            summarize_property("Tags", &json!({ "type": "multi_select", "multi_select": [
+                { "name": "bank" }, { "name": "sync" }
+            ] })),
+            Some("Tags: bank, sync".to_string())
+        );
+        assert_eq!(
+            summarize_property("Notes", &json!({ "type": "rich_text", "rich_text": [{ "plain_text": "idempotent" }] })),
+            Some("Notes: idempotent".to_string())
+        );
+        // title is the row title, not a summary line
+        assert_eq!(
+            summarize_property("Name", &json!({ "type": "title", "title": [{ "plain_text": "X" }] })),
+            None
+        );
+        // unsupported type
+        assert_eq!(
+            summarize_property("Files", &json!({ "type": "files", "files": [] })),
+            None
+        );
+    }
+
+    #[test]
+    fn db_row_maps_to_event_with_title_and_summary() {
+        let row = json!({
+            "id": "row-9",
+            "last_edited_time": "2026-07-02T08:00:00.000Z",
+            "last_edited_by": { "name": "camille" },
+            "properties": {
+                "Name": { "type": "title", "title": [{ "plain_text": "Resync staging" }] },
+                "Statut": { "type": "status", "status": { "name": "Fait" } },
+                "Tags": { "type": "multi_select", "multi_select": [{ "name": "bank" }] }
+            }
+        });
+        let ev = db_row_to_event(&row, "pennylane");
+        assert_eq!(ev.source, "notion");
+        assert_eq!(ev.kind, "doc_edit");
+        assert_eq!(ev.actor, "camille");
+        assert_eq!(ev.payload["topic"], "Resync staging");
+        assert_eq!(ev.payload["notion_id"], "row-9");
+        let text = ev.payload["text"].as_str().unwrap();
+        assert!(text.starts_with("Resync staging — "), "got: {text}");
+        assert!(text.contains("Statut: Fait"), "got: {text}");
+        assert!(text.contains("Tags: bank"), "got: {text}");
     }
 }
