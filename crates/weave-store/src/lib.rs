@@ -7,9 +7,11 @@
 
 mod ports;
 mod postgres;
+pub mod crypto;
 
 pub use ports::{
     AgentStore, EventStore, FactStore, GraphStore, OrgStore, PatternHit, PatternStore, ScoredFact,
     SkillStore, Store,
 };
 pub use postgres::PgStore;
+pub use crypto::Cipher;
