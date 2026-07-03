@@ -477,7 +477,8 @@ async fn ingest_slack(
     Ok(Json(json!({ "status": "ingesting", "source": "slack", "events": n, "project": project })))
 }
 
-/// Replay Notion-tagged seed events through the same pipeline (demo path).
+/// Ingest a real Notion workspace when NOTION_TOKEN is set; otherwise replay the
+/// Notion-tagged seed events (keeps the offline demo working with no secrets).
 async fn ingest_notion(
     State(state): State<AppState>,
     headers: HeaderMap,
