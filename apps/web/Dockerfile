@@ -5,6 +5,9 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
+# next build freezes rewrite destinations into the routes manifest, so the
+# upstream must be set at BUILD time (runtime env is too late).
+ENV WEAVE_API_PROXY=http://weave-api:8787
 RUN pnpm build
 ENV NODE_ENV=production
 EXPOSE 3200
