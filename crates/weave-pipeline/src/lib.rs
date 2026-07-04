@@ -506,8 +506,16 @@ impl Runtime {
             by.entry((s.team.clone(), s.theme.clone())).or_default().push(s);
         }
 
+        // How many same-theme skills a team needs before a specialist emerges.
+        // Env-tunable: with a broad-theme LLM and a thin dataset, 1 lets each
+        // mastered competence become a named specialist.
+        let emerge_threshold: usize = std::env::var("WEAVE_AGENT_EMERGE_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(AGENT_EMERGE_THRESHOLD);
+
         for ((team, theme), cluster) in by {
-            if cluster.len() < AGENT_EMERGE_THRESHOLD {
+            if cluster.len() < emerge_threshold {
                 continue;
             }
             // Idempotent by (team, theme): the display name is LLM-rich and can vary.

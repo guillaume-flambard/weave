@@ -43,6 +43,7 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      WEAVE_AGENT_EMERGE_THRESHOLD: ${WEAVE_AGENT_EMERGE_THRESHOLD:-2}
     depends_on:
       weave-postgres:
         condition: service_healthy
