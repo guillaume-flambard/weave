@@ -381,6 +381,9 @@ export const messages = {
     otherIntegrations: "Autres intégrations",
     connectedBadge: "Connecté",
     reconnectBadge: "Reconnexion requise",
+    sync: "Synchroniser",
+    connectedFlash: "{provider} connecté.",
+    errorFlash: "Connexion à {provider} impossible. Réessayez.",
     emptyTitle: "Aucune source connectée pour l'instant",
     emptyBody:
       "Commencez par connecter Slack ou Notion, ou ingérez l'activité depuis l'espace de travail pendant la mise en place.",

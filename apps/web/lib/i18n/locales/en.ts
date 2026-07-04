@@ -376,6 +376,9 @@ export const messages = {
     otherIntegrations: "Other integrations",
     connectedBadge: "Connected",
     reconnectBadge: "Reconnection required",
+    sync: "Sync",
+    connectedFlash: "{provider} connected.",
+    errorFlash: "Could not connect {provider}. Please try again.",
     emptyTitle: "No sources connected yet",
     emptyBody:
       "Start by connecting Slack or Notion, or ingest activity from the workspace while setup is in progress.",

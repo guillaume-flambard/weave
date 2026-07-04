@@ -17,6 +17,16 @@ pub struct NewConnection {
     pub scopes: String,
 }
 
+/// Non-sensitive connection status for the UI. No tokens are read or decrypted.
+#[derive(Debug, Clone)]
+pub struct ConnectionStatus {
+    pub provider: String,
+    pub team_id: String,
+    pub scopes: String,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// A connection read back (plaintext tokens after decryption). Never serialized to a client.
 #[derive(Debug, Clone)]
 pub struct Connection {
@@ -93,6 +103,27 @@ impl PgStore {
             scopes: row.get("scopes"),
             updated_at: row.get("updated_at"),
         }))
+    }
+
+    /// List all stored connections as non-sensitive status rows (no tokens touched).
+    /// Used by the UI to reflect which providers are really connected.
+    pub async fn list_connections(&self) -> anyhow::Result<Vec<ConnectionStatus>> {
+        let rows = sqlx::query(
+            "SELECT provider, team_id, scopes, expires_at, updated_at
+             FROM connections ORDER BY provider, updated_at DESC",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| ConnectionStatus {
+                provider: row.get("provider"),
+                team_id: row.get("team_id"),
+                scopes: row.get("scopes"),
+                expires_at: row.try_get("expires_at").ok().flatten(),
+                updated_at: row.get("updated_at"),
+            })
+            .collect())
     }
 }
 

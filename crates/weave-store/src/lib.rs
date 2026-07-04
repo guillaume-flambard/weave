@@ -15,5 +15,5 @@ pub use ports::{
     SkillStore, Store,
 };
 pub use postgres::PgStore;
-pub use connections::{Connection, NewConnection};
+pub use connections::{Connection, ConnectionStatus, NewConnection};
 pub use crypto::Cipher;

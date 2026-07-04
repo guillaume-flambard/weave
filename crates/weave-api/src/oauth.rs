@@ -151,20 +151,26 @@ pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQue
         return (StatusCode::SERVICE_UNAVAILABLE, "slack oauth not configured").into_response();
     };
     if !verify_state(&cfg.signing_secret, &q.state, Utc::now().timestamp()) {
-        return (StatusCode::BAD_REQUEST, "invalid state").into_response();
+        return web_redirect("connect_error=slack");
     }
     let tokens = match exchange_code(&cfg, &q.code).await {
         Ok(t) => t,
         Err(e) => {
             tracing::error!("slack code exchange failed: {e}");
-            return (StatusCode::BAD_GATEWAY, "slack code exchange failed").into_response();
+            return web_redirect("connect_error=slack");
         }
     };
     if let Err(e) = store_tokens(&state, tokens).await {
         tracing::error!("store slack connection failed: {e}");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "could not store connection").into_response();
+        return web_redirect("connect_error=slack");
     }
-    (StatusCode::OK, "Slack connected. You can close this tab.").into_response()
+    web_redirect("connected=slack")
+}
+
+/// Redirect the browser back to the web app's sources view after an OAuth attempt.
+fn web_redirect(param: &str) -> Response {
+    let web = std::env::var("WEAVE_WEB_URL").unwrap_or_else(|_| "http://localhost:3200".into());
+    Redirect::to(&format!("{web}/?cmd=sources&{param}")).into_response()
 }
 
 /// Persist normalized tokens as the active Slack connection.

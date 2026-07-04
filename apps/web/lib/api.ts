@@ -144,3 +144,21 @@ export function ingestNotion(project?: string) {
   return fetchJson<{ ingested?: number; events?: number; message?: string }>(`${API}/ingest/notion${q}`, { method: "POST" });
 }
 
+export type ConnectionStatus = {
+  provider: string;
+  team_id: string;
+  scopes: string;
+  expires_at: string | null;
+  updated_at: string;
+};
+
+/** Real stored connections (no tokens). Used to reflect true connect state in the UI. */
+export function fetchConnections() {
+  return fetchJson<ConnectionStatus[]>(`${API}/connections`);
+}
+
+/** Full-page OAuth entrypoint. The browser navigates here; backend 302s to the provider. */
+export function authorizeUrl(provider: "slack") {
+  return `${API}/oauth/${provider}/authorize`;
+}
+

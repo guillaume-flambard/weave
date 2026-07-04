@@ -179,6 +179,7 @@ fn build_app(state: AppState) -> Router {
         .route("/agents/approve", post(approve_agent))
         .route("/agents/run", post(run_agent))
         .route("/mcp", post(mcp))
+        .route("/connections", get(get_connections))
         .route("/oauth/slack/authorize", get(oauth::authorize))
         .route("/oauth/slack/callback", get(oauth::callback))
         .route("/connections/slack/import", post(oauth::import_from_env))
@@ -643,6 +644,24 @@ async fn get_agents(
     use weave_store::AgentStore;
     let agents = state.store.agents(&project_of(&q)).await?;
     Ok(Json(json!(agents)))
+}
+
+/// Non-sensitive list of stored connections, so the UI can show real connect state.
+async fn get_connections(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+    let conns = state.store.list_connections().await?;
+    let out: Vec<Value> = conns
+        .iter()
+        .map(|c| {
+            json!({
+                "provider": c.provider,
+                "team_id": c.team_id,
+                "scopes": c.scopes,
+                "expires_at": c.expires_at,
+                "updated_at": c.updated_at,
+            })
+        })
+        .collect();
+    Ok(Json(json!(out)))
 }
 
 #[derive(Deserialize)]
@@ -1280,6 +1299,7 @@ mod tests {
         std::env::set_var("SLACK_CLIENT_SECRET", "csecret");
         std::env::set_var("SLACK_SIGNING_SECRET", "ssecret");
         std::env::set_var("SLACK_API_BASE", mock.uri());
+        std::env::set_var("WEAVE_WEB_URL", "https://web.test");
 
         let state = crate::oauth::sign_state("ssecret", chrono::Utc::now().timestamp());
         let uri = format!("/oauth/slack/callback?code=abc&state={state}");
@@ -1287,7 +1307,29 @@ mod tests {
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(resp.status(), 200);
+        // Callback redirects the browser back to the web app's sources view.
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        let loc = resp.headers().get("location").unwrap().to_str().unwrap();
+        assert!(loc.contains("connected=slack"), "location was {loc}");
+    }
+
+    #[tokio::test]
+    async fn connections_endpoint_lists_stored() {
+        let Some(app) = test_app().await else { return };
+        // Empty by default.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/connections")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert!(body.is_array(), "expected array, got {body}");
     }
 
     #[tokio::test]
