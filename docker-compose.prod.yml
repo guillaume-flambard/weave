@@ -33,7 +33,7 @@ services:
       SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
       SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
       SLACK_REDIRECT_URI: https://strayeye.com/weave-api/oauth/slack/callback
-      SLACK_SCOPES: ${SLACK_SCOPES:-}
+      SLACK_OAUTH_SCOPES: ${SLACK_OAUTH_SCOPES:-}
     depends_on:
       weave-postgres:
         condition: service_healthy
