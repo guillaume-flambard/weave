@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  Bot, Brain, Building2, GitBranch, MessagesSquare, NotebookText, Plug, Shield, Sparkles, Zap,
+  Bot, Brain, Building2, Check, GitBranch, Loader2, MessagesSquare, NotebookText, Plug,
+  RefreshCw, Shield, Sparkles, Zap,
 } from "lucide-react";
-import { Button, Badge } from "../ui/primitives";
+import { Button, Badge, StatusIndicator } from "../ui/primitives";
 import { AnswerBlock, Card, ProgressBar } from "../ui/workspace-ui";
 import { ApiFeedRow } from "../workspace/api-feed-row";
 import { authorizeUrl, fetchConnections, ingestNotion, ingestSlack } from "../../lib/api";
@@ -38,11 +39,15 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const primary = primaryConnectors(orgId);
   const secondary = secondaryConnectors(orgId);
   const [busy, setBusy] = useState<string | null>(null);
-  // Providers that are really connected in the backend (from GET /connections).
+  // Providers really connected in the backend (from GET /connections).
   const [live, setLive] = useState<Set<string> | null>(null);
-  // Providers with a real OAuth flow (button → full-page redirect).
+  // True once the first /connections fetch resolves (success or failure) — until
+  // then OAuth rows show a checking state instead of flickering Connect→Connected.
+  const [loaded, setLoaded] = useState(false);
+  // Per-provider result line after a sync ("12 éléments lus" / "À jour").
+  const [synced, setSynced] = useState<Record<string, string>>({});
   const OAUTH = new Set(["slack", "notion"]);
-  // Post-redirect flash: "connected" | "error" from ?connected/?connect_error.
+  // Post-redirect flash from ?connected / ?connect_error.
   const [flash, setFlash] = useState<{ tone: "ok" | "err"; provider: string } | null>(null);
 
   // Load real connection state, and read the OAuth redirect result from the URL.
@@ -53,8 +58,10 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
         if (alive) setLive(new Set(conns.map((c) => c.provider)));
       })
       .catch(() => {
-        // API unreachable (offline demo) → fall back to the demo profile.
-        if (alive) setLive(null);
+        if (alive) setLive(null); // API unreachable → fall back to the demo profile
+      })
+      .finally(() => {
+        if (alive) setLoaded(true);
       });
 
     const params = new URLSearchParams(window.location.search);
@@ -74,8 +81,14 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     };
   }, []);
 
-  // OAuth providers (Slack, Notion): real backend state from GET /connections,
-  // falling back to the demo profile only when the API is unreachable.
+  // Auto-dismiss the flash after a few seconds.
+  useEffect(() => {
+    if (!flash) return;
+    const id = window.setTimeout(() => setFlash(null), 5000);
+    return () => window.clearTimeout(id);
+  }, [flash]);
+
+  // Real backend state; demo profile only while the API is unreachable.
   const status = (id: string) => {
     if (live) {
       if (OAUTH.has(id)) return live.has(id) ? "connected" : "disconnected";
@@ -91,12 +104,19 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     window.location.href = authorizeUrl(id);
   };
 
-  // Sync is separate from connecting: pull content from the stored connection.
+  // Sync pulls content from the stored connection and reports what it read.
   const sync = async (id: string) => {
     setBusy(id);
     try {
-      if (id === "slack") await ingestSlack(orgId);
-      else if (id === "notion") await ingestNotion(orgId);
+      const res = id === "slack" ? await ingestSlack(orgId) : await ingestNotion(orgId);
+      const n = (res as { ingested?: number; events?: number }).ingested
+        ?? (res as { events?: number }).events ?? 0;
+      setSynced((s) => ({
+        ...s,
+        [id]: n > 0 ? t("sources.syncedCount").replace("{n}", String(n)) : t("sources.upToDate"),
+      }));
+    } catch {
+      setSynced((s) => ({ ...s, [id]: t("sources.syncFailed") }));
     } finally {
       setBusy(null);
     }
@@ -105,35 +125,54 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const renderRow = (c: (typeof primary)[0], isPrimary?: boolean) => {
     const connected = status(c.id) === "connected";
     const connectable = OAUTH.has(c.id);
+    const checking = connectable && !loaded; // first load in flight
+    const working = busy === c.id;
     return (
       <div
         key={c.id}
         className={`wv-chat-block flex items-start gap-3 ${isPrimary ? "wv-connector-primary" : ""}`}
       >
-        <span className="w-9 h-9 rounded-lg bg-subtle inline-flex items-center justify-center shrink-0 text-ink-soft">
+        <span
+          className={`w-9 h-9 rounded-lg inline-flex items-center justify-center shrink-0 transition-colors duration-150 ${
+            connected ? "bg-lvl-team-bg text-lvl-team" : "bg-subtle text-ink-soft"
+          }`}
+        >
           <ConnectorIcon id={c.id} />
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-ink">{c.name}</span>
-            {connected && <Badge tone="active">{t("sources.connectedBadge")}</Badge>}
-            {isPrimary && <Badge tone="team">{t("sources.primaryLabel")}</Badge>}
+            {connected && <StatusIndicator connected labelConnected={t("sources.connectedBadge")} />}
+            {isPrimary && !connected && <Badge tone="team">{t("sources.primaryLabel")}</Badge>}
           </div>
           <div className="mt-0.5 text-xs text-muted">{c.role}</div>
-          {connected && c.items && (
-            <div className="mt-1 text-[11px] text-muted">{c.items} · sync {c.lastSync}</div>
+          {connected && (synced[c.id] || c.items) && (
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-muted">
+              {synced[c.id] ? (
+                <><Check size={11} className="text-lvl-team" /> {synced[c.id]}</>
+              ) : (
+                <>{c.items} · sync {c.lastSync}</>
+              )}
+            </div>
           )}
         </div>
-        {!connected && connectable && (
-          <Button variant="primary" size="sm" disabled={busy === c.id} onClick={() => connect(c.id)}>
-            {busy === c.id ? "…" : t("chat.connect")}
+        {checking ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted self-center">
+            <Loader2 size={13} className="animate-spin" /> {t("sources.checking")}
+          </span>
+        ) : !connected && connectable ? (
+          <Button variant="primary" size="sm" disabled={working} onClick={() => connect(c.id)}>
+            {working ? <Loader2 size={13} className="animate-spin" /> : t("chat.connect")}
           </Button>
-        )}
-        {connected && connectable && (
-          <Button variant="secondary" size="sm" disabled={busy === c.id} onClick={() => sync(c.id)}>
-            {busy === c.id ? "…" : t("sources.sync")}
+        ) : connected && connectable ? (
+          <Button variant="secondary" size="sm" disabled={working} onClick={() => sync(c.id)}>
+            {working ? (
+              <><Loader2 size={13} className="animate-spin" /> {t("sources.syncing")}</>
+            ) : (
+              <><RefreshCw size={13} /> {t("sources.sync")}</>
+            )}
           </Button>
-        )}
+        ) : null}
       </div>
     );
   };
@@ -142,15 +181,19 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     <div className="flex flex-col gap-2">
       {flash && (
         <div
-          className={`rounded-md px-3 py-2 text-[13px] ${
+          role="status"
+          className={`wv-chat-block-in flex items-center gap-2 rounded-md px-3 py-2 text-[13px] ${
             flash.tone === "ok"
               ? "bg-accent-soft text-accent-deep border border-accent/40"
               : "bg-[#fef2f2] text-[#b42318] border border-[#fecaca]"
           }`}
         >
-          {flash.tone === "ok"
-            ? t("sources.connectedFlash").replace("{provider}", flash.provider)
-            : t("sources.errorFlash").replace("{provider}", flash.provider)}
+          {flash.tone === "ok" ? <Check size={14} /> : <Plug size={14} />}
+          <span>
+            {flash.tone === "ok"
+              ? t("sources.connectedFlash").replace("{provider}", flash.provider)
+              : t("sources.errorFlash").replace("{provider}", flash.provider)}
+          </span>
         </div>
       )}
       <p className="m-0 text-[13px] text-ink-soft">{t("sources.primaryHint")}</p>
