@@ -2584,9 +2584,11 @@ dependencies = [
  "chrono",
  "reqwest",
  "serde_json",
+ "tokio",
  "tracing",
  "uuid",
  "weave-core",
+ "wiremock",
 ]
 
 [[package]]
