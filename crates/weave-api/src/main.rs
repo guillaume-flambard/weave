@@ -704,9 +704,14 @@ async fn approve_agent(
 /// response; any error is logged and downgraded to "failed" (best-effort).
 async fn push_agent_to_notion(state: &AppState, project: &str, name: &str) -> &'static str {
     use weave_store::AgentStore;
-    let conn = match state.store.get_active_connection(&state.cipher, "notion").await {
-        Ok(Some(c)) => c,
-        Ok(None) => return "not_connected",
+    // Prefer a stored OAuth connection; fall back to a static NOTION_TOKEN
+    // (internal integration) so the loop works without the OAuth dance.
+    let token = match state.store.get_active_connection(&state.cipher, "notion").await {
+        Ok(Some(c)) => c.access_token,
+        Ok(None) => match std::env::var("NOTION_TOKEN").ok().filter(|t| !t.trim().is_empty()) {
+            Some(t) => t,
+            None => return "not_connected",
+        },
         Err(e) => {
             tracing::error!("notion connection lookup failed: {e}");
             return "failed";
@@ -720,7 +725,7 @@ async fn push_agent_to_notion(state: &AppState, project: &str, name: &str) -> &'
         }
     };
     let Some(agent) = agent else { return "failed" };
-    match weave_ingest::NotionWriter::new(conn.access_token)
+    match weave_ingest::NotionWriter::new(token)
         .upsert_agent(&agent)
         .await
     {
@@ -1270,6 +1275,7 @@ mod tests {
         let store = PgStore::from_pool(pool);
         store.migrate().await.unwrap();
 
+        std::env::remove_var("NOTION_TOKEN"); // ensure no static fallback for this assertion
         let project = unique_project("api-notion");
         let name = "specialiste-ops-finance-ops";
         store.insert_agent(&sample_agent(&project, name)).await.unwrap();

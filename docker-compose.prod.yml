@@ -37,6 +37,8 @@ services:
       NOTION_CLIENT_ID: ${NOTION_CLIENT_ID:-}
       NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET:-}
       NOTION_REDIRECT_URI: https://strayeye.com/weave-api/oauth/notion/callback
+      NOTION_TOKEN: ${NOTION_TOKEN:-}
+      NOTION_PARENT_PAGE_ID: ${NOTION_PARENT_PAGE_ID:-}
     depends_on:
       weave-postgres:
         condition: service_healthy
