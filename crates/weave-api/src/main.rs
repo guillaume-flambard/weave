@@ -908,6 +908,19 @@ mod tests {
             Ok("stub skill".into())
         }
 
+        async fn assign_theme(&self, trigger: &str, _body: &str) -> anyhow::Result<String> {
+            Ok(weave_llm::heuristic_theme(trigger))
+        }
+
+        async fn synthesize_agent(
+            &self,
+            team: &str,
+            theme: &str,
+            skills: &[weave_llm::SkillBrief],
+        ) -> anyhow::Result<weave_llm::AgentSpec> {
+            Ok(weave_llm::heuristic_agent_spec(team, theme, skills))
+        }
+
         async fn answer(&self, question: &str, _context: &str) -> anyhow::Result<String> {
             Ok(format!("stub answer: {question}"))
         }
@@ -1004,6 +1017,7 @@ mod tests {
             name: name.into(),
             trigger: "Comment relancer la synchro bancaire ?".into(),
             body: "1. Lancer BankSync.rerun(client_id)".into(),
+            theme: "synchro bancaire".into(),
             sources: vec![uuid::Uuid::new_v4()],
             referents: vec!["nicolas".into()],
             derived_from_pattern: None,
@@ -1020,6 +1034,7 @@ mod tests {
             name: name.into(),
             role: "Tu aides l'équipe ops.".into(),
             domain: "finance-ops".into(),
+            description: "Spécialiste ops.".into(),
             skills: vec!["banking/relancer-synchro".into()],
             scope: MemoryLevel::Team,
             status: AgentStatus::Pending,

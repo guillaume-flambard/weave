@@ -181,6 +181,9 @@ pub struct Skill {
     pub name: String,
     pub trigger: String,
     pub body: String,
+    /// Free-text LLM theme used to cluster skills into a specialist agent.
+    #[serde(default)]
+    pub theme: String,
     pub sources: Vec<Uuid>,
     pub referents: Vec<String>,
     pub derived_from_pattern: Option<Uuid>,
@@ -266,8 +269,11 @@ pub struct Agent {
     pub name: String,
     /// System prompt / mandate.
     pub role: String,
-    /// Coarse domain used for routing/emergence (e.g. "finance-ops", "general").
+    /// Free-text theme this agent specializes in (the cluster it emerged from).
     pub domain: String,
+    /// One-line human description synthesized from the agent's skills.
+    #[serde(default)]
+    pub description: String,
     /// Skills this agent may use, by name.
     pub skills: Vec<String>,
     /// Minimum memory level this agent may read.
@@ -276,44 +282,6 @@ pub struct Agent {
     /// "predefined" or a description of what it emerged from.
     pub derived_from: String,
     pub created_at: DateTime<Utc>,
-}
-
-/// Coarse domain classifier over free text. Heuristic for the MVP; replace with
-/// embedding/graph clustering in v1. First matching family wins.
-pub fn classify_domain(text: &str) -> String {
-    let t = text.to_lowercase();
-    const FAMILIES: &[(&str, &[&str])] = &[
-        ("finance-ops", &[
-            "banc", "synchro", "stripe", "paiement", "webhook", "fec", "compta",
-            "écriture", "ecriture", "réconciliation", "reconciliation", "bridge",
-            "facture", "abonnement",
-        ]),
-        ("engineering", &[
-            "déploie", "deploie", "deploy", "staging", "build", "release", "migration",
-            "endpoint", "ci/cd", "pipeline ci", "rollback", "hotfix",
-        ]),
-        ("data", &[
-            "etl", "ingestion", "dataset", "requête sql", "sql", "modèle", "mapping",
-            "dbt", "warehouse", "métrique", "metric",
-        ]),
-        ("growth", &[
-            "campagne", "acquisition", "funnel", "conversion", "seo", "ads", "lead",
-            "onboarding", "activation",
-        ]),
-        ("design", &[
-            "maquette", "figma", "design system", "composant ui", "ux", "prototype",
-            "wireframe",
-        ]),
-        ("support", &[
-            "ticket", "incident", "escalade", "sla", "runbook", "astreinte",
-        ]),
-    ];
-    for (name, kws) in FAMILIES {
-        if kws.iter().any(|k| t.contains(k)) {
-            return (*name).to_string();
-        }
-    }
-    "general".into()
 }
 
 /// Normalize free-form topic text into a stable pattern signature so that

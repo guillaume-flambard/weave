@@ -342,8 +342,8 @@ impl PatternStore for PgStore {
 impl SkillStore for PgStore {
     async fn insert_skill(&self, skill: &Skill) -> anyhow::Result<bool> {
         let res = sqlx::query(
-            "INSERT INTO skills (id, project, team, workstream, name, trigger, body, sources, referents, derived_from_pattern, memory_level)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            "INSERT INTO skills (id, project, team, workstream, name, trigger, body, sources, referents, derived_from_pattern, memory_level, theme)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              ON CONFLICT (project, name) DO NOTHING",
         )
         .bind(skill.id)
@@ -357,6 +357,7 @@ impl SkillStore for PgStore {
         .bind(&skill.referents)
         .bind(skill.derived_from_pattern)
         .bind(skill.memory_level.as_str())
+        .bind(&skill.theme)
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected() > 0)
@@ -364,7 +365,7 @@ impl SkillStore for PgStore {
 
     async fn skills(&self, project: &str) -> anyhow::Result<Vec<Skill>> {
         let rows = sqlx::query(
-            "SELECT id, project, team, workstream, name, trigger, body, sources, referents, derived_from_pattern, memory_level, created_at
+            "SELECT id, project, team, workstream, name, trigger, body, sources, referents, derived_from_pattern, memory_level, theme, created_at
              FROM skills WHERE project = $1 ORDER BY created_at DESC",
         )
         .bind(project)
@@ -375,7 +376,7 @@ impl SkillStore for PgStore {
 
     async fn skill_by_name(&self, project: &str, name: &str) -> anyhow::Result<Option<Skill>> {
         let row = sqlx::query(
-            "SELECT id, project, team, workstream, name, trigger, body, sources, referents, derived_from_pattern, memory_level, created_at
+            "SELECT id, project, team, workstream, name, trigger, body, sources, referents, derived_from_pattern, memory_level, theme, created_at
              FROM skills WHERE project = $1 AND name = $2",
         )
         .bind(project)
@@ -390,8 +391,8 @@ impl SkillStore for PgStore {
 impl AgentStore for PgStore {
     async fn insert_agent(&self, a: &Agent) -> anyhow::Result<bool> {
         let res = sqlx::query(
-            "INSERT INTO agents (id, project, team, name, role, domain, skills, scope, status, derived_from)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            "INSERT INTO agents (id, project, team, name, role, domain, skills, scope, status, derived_from, description)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
              ON CONFLICT (project, name) DO NOTHING",
         )
         .bind(a.id)
@@ -404,6 +405,7 @@ impl AgentStore for PgStore {
         .bind(a.scope.as_str())
         .bind(a.status.as_str())
         .bind(&a.derived_from)
+        .bind(&a.description)
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected() > 0)
@@ -411,7 +413,7 @@ impl AgentStore for PgStore {
 
     async fn agents(&self, project: &str) -> anyhow::Result<Vec<Agent>> {
         let rows = sqlx::query(
-            "SELECT id, project, team, name, role, domain, skills, scope, status, derived_from, created_at
+            "SELECT id, project, team, name, role, domain, skills, scope, status, derived_from, description, created_at
              FROM agents WHERE project = $1 ORDER BY created_at",
         )
         .bind(project)
@@ -422,7 +424,7 @@ impl AgentStore for PgStore {
 
     async fn agent_by_name(&self, project: &str, name: &str) -> anyhow::Result<Option<Agent>> {
         let row = sqlx::query(
-            "SELECT id, project, team, name, role, domain, skills, scope, status, derived_from, created_at
+            "SELECT id, project, team, name, role, domain, skills, scope, status, derived_from, description, created_at
              FROM agents WHERE project = $1 AND name = $2",
         )
         .bind(project)
@@ -480,6 +482,7 @@ fn row_to_agent(r: &PgRow) -> Agent {
         name: r.get("name"),
         role: r.get("role"),
         domain: r.get("domain"),
+        description: r.try_get("description").unwrap_or_default(),
         skills: r.get("skills"),
         scope: MemoryLevel::from_str_lossy(r.get::<String, _>("scope").as_str()),
         status: AgentStatus::from_str_lossy(r.get::<String, _>("status").as_str()),
@@ -501,6 +504,7 @@ fn row_to_skill(r: &PgRow) -> Skill {
         referents: r.get("referents"),
         derived_from_pattern: r.try_get("derived_from_pattern").ok(),
         memory_level: MemoryLevel::from_str_lossy(r.get::<String, _>("memory_level").as_str()),
+        theme: r.try_get("theme").unwrap_or_default(),
         created_at: r.get::<DateTime<Utc>, _>("created_at"),
     }
 }

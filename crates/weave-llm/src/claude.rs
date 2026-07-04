@@ -118,6 +118,47 @@ impl LlmGateway for ClaudeLlm {
         }
     }
 
+    async fn assign_theme(&self, trigger: &str, body: &str) -> anyhow::Result<String> {
+        let system = "Tu classes une compétence d'équipe. Réponds par un thème court \
+            (2 à 4 mots), en minuscules, sans ponctuation. Le thème seul, rien d'autre.";
+        let user = format!("Déclencheur: {trigger}\nProcédure: {body}");
+        match self.complete(system, &user, 40).await {
+            Ok(t) => {
+                let theme = t.trim().lines().next().unwrap_or("").trim().to_lowercase();
+                Ok(if theme.is_empty() { crate::heuristic_theme(trigger) } else { theme })
+            }
+            Err(e) => {
+                tracing::warn!("Claude assign_theme failed ({e}); using heuristic");
+                self.fallback.assign_theme(trigger, body).await
+            }
+        }
+    }
+
+    async fn synthesize_agent(
+        &self,
+        team: &str,
+        theme: &str,
+        skills: &[crate::SkillBrief],
+    ) -> anyhow::Result<crate::AgentSpec> {
+        let list = skills
+            .iter()
+            .map(|s| format!("- {} : {}", s.trigger, s.body))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let system = "Tu conçois un agent spécialiste d'équipe. Réponds en JSON strict \
+            {\"name\":..,\"role\":..,\"description\":..} : name = identifiant court en kebab-case ; \
+            role = mandat en 2 phrases ; description = une phrase.";
+        let user = format!("Équipe: {team}\nThème: {theme}\nCompétences:\n{list}");
+        match self.complete(system, &user, 400).await {
+            Ok(js) => Ok(serde_json::from_str::<crate::AgentSpec>(js.trim())
+                .unwrap_or_else(|_| crate::heuristic_agent_spec(team, theme, skills))),
+            Err(e) => {
+                tracing::warn!("Claude synthesize_agent failed ({e}); using heuristic");
+                self.fallback.synthesize_agent(team, theme, skills).await
+            }
+        }
+    }
+
     async fn answer(&self, question: &str, context: &str) -> anyhow::Result<String> {
         let system = "You are an agent backed by the team's shared cognitive memory. \
             Answer using ONLY the provided context. Be concise and cite which memory \

@@ -16,8 +16,8 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use weave_core::{
-    classify_domain, normalize_signature, Agent, AgentStatus, Entity, Event, Fact, FactType,
-    MemoryLevel, Relationship, Skill,
+    normalize_signature, Agent, AgentStatus, Entity, Event, Fact, FactType, MemoryLevel,
+    Relationship, Skill,
 };
 use weave_llm::{EmbeddingGateway, LlmGateway};
 use weave_store::Store;
@@ -396,6 +396,14 @@ impl Runtime {
             .synthesize_skill(&signature, &fact.topic, &answers)
             .await?;
 
+        // Assign a free-text theme so this skill can cluster into a specialist
+        // agent. Best-effort: a failure leaves the skill un-themed (not clustered).
+        let theme = self
+            .llm
+            .assign_theme(&fact.topic, &body)
+            .await
+            .unwrap_or_default();
+
         let skill = Skill {
             id: Uuid::new_v4(),
             project: event.project.clone(),
@@ -404,6 +412,7 @@ impl Runtime {
             name: name.clone(),
             trigger: fact.topic.clone(),
             body: body.clone(),
+            theme,
             sources: sources.clone(),
             referents: referents.clone(),
             derived_from_pattern: Some(hit.id),
@@ -462,6 +471,7 @@ impl Runtime {
             name: org_name.clone(),
             trigger,
             body: body.clone(),
+            theme: String::new(), // org-level convention, not a specialist theme
             sources: sources.clone(),
             referents: referents.clone(),
             derived_from_pattern: None,
@@ -481,52 +491,63 @@ impl Runtime {
         Ok(())
     }
 
-    /// Cluster skills by coarse domain; when a non-general domain reaches the
-    /// threshold, an emergent specialist agent is born (pending human approval).
+    /// Cluster a team's skills by their free-text theme; when a theme reaches the
+    /// threshold, an LLM synthesizes a specialist agent's identity (name, role,
+    /// description) and the agent is born pending human approval. No keyword domains.
     async fn maybe_emerge_agent(&self, project: &str) -> anyhow::Result<()> {
         let skills = self.store.skills(project).await?;
-        // Cluster within a TEAM by domain: a team that accumulates a domain grows
-        // its own specialist.
-        let mut by: HashMap<(String, String), Vec<String>> = HashMap::new();
+        let existing = self.store.agents(project).await?;
+
+        let mut by: HashMap<(String, String), Vec<&Skill>> = HashMap::new();
         for s in &skills {
-            if s.team.is_empty() {
-                continue; // org-level skills don't belong to a team
+            if s.team.is_empty() || s.theme.trim().is_empty() {
+                continue; // org-level or un-themed skills don't seed a specialist
             }
-            let domain = classify_domain(&format!("{} {}", s.trigger, s.body));
-            if domain != "general" {
-                by.entry((s.team.clone(), domain)).or_default().push(s.name.clone());
-            }
+            by.entry((s.team.clone(), s.theme.clone())).or_default().push(s);
         }
-        for ((team, domain), skill_names) in by {
-            if skill_names.len() < AGENT_EMERGE_THRESHOLD {
+
+        for ((team, theme), cluster) in by {
+            if cluster.len() < AGENT_EMERGE_THRESHOLD {
                 continue;
             }
-            let name = format!("specialiste-{team}-{domain}");
-            if self.store.agent_by_name(project, &name).await?.is_some() {
-                continue; // already emerged
+            // Idempotent by (team, theme): the display name is LLM-rich and can vary.
+            if existing.iter().any(|a| a.team == team && a.domain == theme) {
+                continue;
             }
-            let role = format!(
-                "Tu es l'agent spécialiste {domain} de l'équipe {team}. Tu maîtrises les \
-                 procédures {}. Réponds et agis en t'appuyant sur ces skills et la mémoire partagée.",
-                skill_names.join(", ")
-            );
+            let briefs: Vec<weave_llm::SkillBrief> = cluster
+                .iter()
+                .map(|s| weave_llm::SkillBrief {
+                    name: s.name.clone(),
+                    trigger: s.trigger.clone(),
+                    body: s.body.clone(),
+                })
+                .collect();
+            let spec = match self.llm.synthesize_agent(&team, &theme, &briefs).await {
+                Ok(spec) => spec,
+                Err(e) => {
+                    tracing::error!("synthesize_agent failed for ({team},{theme}): {e}");
+                    continue; // best-effort: skip this round
+                }
+            };
+            let skill_names: Vec<String> = cluster.iter().map(|s| s.name.clone()).collect();
             let agent = Agent {
                 id: Uuid::new_v4(),
                 project: project.to_string(),
                 team: team.clone(),
-                name: name.clone(),
-                role,
-                domain: domain.clone(),
+                name: spec.name.clone(),
+                role: spec.role,
+                domain: theme.clone(),
+                description: spec.description,
                 skills: skill_names.clone(),
                 scope: MemoryLevel::Team,
                 status: AgentStatus::Pending, // requires human approval
-                derived_from: format!("équipe {team} · cluster de {} skills", skill_names.len()),
+                derived_from: format!("équipe {team} · {} skills sur « {theme} »", skill_names.len()),
                 created_at: Utc::now(),
             };
             if self.store.insert_agent(&agent).await? {
                 self.emit(PipelineEvent::AgentEmerged {
-                    name,
-                    domain,
+                    name: spec.name,
+                    domain: theme,
                     skills: skill_names,
                     status: "pending".into(),
                 });
@@ -547,6 +568,7 @@ impl Runtime {
                    leur domaine."
                 .into(),
             domain: "general".into(),
+            description: "Assistant généraliste, point d'entrée de l'organisation.".into(),
             skills: vec![],
             scope: MemoryLevel::Organization,
             status: AgentStatus::Active,
@@ -634,21 +656,36 @@ impl Runtime {
         Ok(answer)
     }
 
-    /// Find an active specialist (different from `exclude`) whose domain matches
-    /// the task's domain.
+    /// Find the active specialist (≠ `exclude`) whose identity best matches the
+    /// task by embedding similarity. No keyword domains.
     async fn find_specialist(
         &self,
         project: &str,
         task: &str,
         exclude: &str,
     ) -> anyhow::Result<Option<Agent>> {
-        let domain = classify_domain(task);
-        if domain == "general" {
+        const ROUTE_MIN_SIMILARITY: f32 = 0.35;
+        let candidates: Vec<Agent> = self
+            .store
+            .agents(project)
+            .await?
+            .into_iter()
+            .filter(|a| a.status == AgentStatus::Active && a.name != exclude && !a.skills.is_empty())
+            .collect();
+        if candidates.is_empty() {
             return Ok(None);
         }
-        Ok(self.store.agents(project).await?.into_iter().find(|a| {
-            a.status == AgentStatus::Active && a.domain == domain && a.name != exclude
-        }))
+        let task_emb = self.embedder.embed(task).await?;
+        let mut best: Option<(f32, Agent)> = None;
+        for a in candidates {
+            let text = format!("{} {} {}", a.domain, a.role, a.description);
+            let emb = self.embedder.embed(&text).await?;
+            let sim = cosine(&task_emb, &emb);
+            if best.as_ref().map(|(b, _)| sim > *b).unwrap_or(true) {
+                best = Some((sim, a));
+            }
+        }
+        Ok(best.filter(|(s, _)| *s >= ROUTE_MIN_SIMILARITY).map(|(_, a)| a))
     }
 
     /// Build an agent's working context: its skills' bodies + retrieved facts.
@@ -747,6 +784,32 @@ fn verify(task: &str, answer: &str) -> bool {
     let sig = normalize_signature(task);
     let hits = sig.split(' ').filter(|t| !t.is_empty() && a.contains(*t)).count();
     hits >= 1
+}
+
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cosine;
+
+    #[test]
+    fn cosine_scores_similarity() {
+        // Identical direction → 1.0; orthogonal → 0.0; opposite → -1.0.
+        assert!((cosine(&[1.0, 0.0], &[2.0, 0.0]) - 1.0).abs() < 1e-6);
+        assert!(cosine(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
+        assert!((cosine(&[1.0, 0.0], &[-1.0, 0.0]) + 1.0).abs() < 1e-6);
+        // Zero vector is safe (no NaN).
+        assert_eq!(cosine(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
 }
 
 fn payload_str(event: &Event, key: &str) -> String {

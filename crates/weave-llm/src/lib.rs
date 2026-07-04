@@ -75,6 +75,54 @@ pub struct Extraction {
     pub relationships: Vec<ExtractedRelationship>,
 }
 
+/// A skill passed to agent synthesis.
+#[derive(Debug, Clone)]
+pub struct SkillBrief {
+    pub name: String,
+    pub trigger: String,
+    pub body: String,
+}
+
+/// A synthesized specialist-agent identity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSpec {
+    pub name: String,
+    pub role: String,
+    pub description: String,
+}
+
+/// Deterministic theme: the two most significant normalized tokens of the trigger.
+/// No fixed domain taxonomy — used by the offline mock and as a real-LLM fallback.
+pub fn heuristic_theme(trigger: &str) -> String {
+    const STOP: &[&str] = &[
+        "le", "la", "les", "un", "une", "des", "de", "du", "the", "a", "of", "pour", "sur",
+        "que", "qui", "and", "for", "with",
+    ];
+    trigger
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() > 2 && !STOP.contains(w))
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Deterministic agent identity — offline mock and fallback when a real LLM's
+/// JSON can't be parsed.
+pub fn heuristic_agent_spec(team: &str, theme: &str, skills: &[SkillBrief]) -> AgentSpec {
+    let slug: String = theme.split_whitespace().collect::<Vec<_>>().join("-");
+    let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+    AgentSpec {
+        name: if slug.is_empty() { format!("agent-{team}") } else { format!("agent-{slug}") },
+        role: format!(
+            "Tu es le spécialiste « {theme} » de l'équipe {team}. Tu t'appuies sur les \
+             procédures {} et la mémoire partagée.",
+            names.join(", ")
+        ),
+        description: format!("Né de {} procédures récurrentes sur « {theme} ».", skills.len()),
+    }
+}
+
 /// Turns raw events into structured knowledge and answers questions.
 #[async_trait]
 pub trait LlmGateway: Send + Sync {
@@ -89,6 +137,17 @@ pub trait LlmGateway: Send + Sync {
         question: &str,
         answers: &[String],
     ) -> anyhow::Result<String>;
+
+    /// Assign a short free-text theme to a skill (e.g. "réconciliation bancaire").
+    async fn assign_theme(&self, trigger: &str, body: &str) -> anyhow::Result<String>;
+
+    /// Synthesize a specialist agent's identity from a cluster of skills.
+    async fn synthesize_agent(
+        &self,
+        team: &str,
+        theme: &str,
+        skills: &[SkillBrief],
+    ) -> anyhow::Result<AgentSpec>;
 
     /// Answer a question given retrieved memory context (with provenance).
     async fn answer(&self, question: &str, context: &str) -> anyhow::Result<String>;

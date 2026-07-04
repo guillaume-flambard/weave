@@ -151,6 +151,19 @@ impl LlmGateway for HeuristicLlm {
         ))
     }
 
+    async fn assign_theme(&self, trigger: &str, _body: &str) -> anyhow::Result<String> {
+        Ok(crate::heuristic_theme(trigger))
+    }
+
+    async fn synthesize_agent(
+        &self,
+        team: &str,
+        theme: &str,
+        skills: &[crate::SkillBrief],
+    ) -> anyhow::Result<crate::AgentSpec> {
+        Ok(crate::heuristic_agent_spec(team, theme, skills))
+    }
+
     async fn answer(&self, question: &str, context: &str) -> anyhow::Result<String> {
         Ok(format!(
             "Based on the team's shared memory:\n\n{context}\n\n(Answer to: {question})"
@@ -159,5 +172,32 @@ impl LlmGateway for HeuristicLlm {
 
     fn name(&self) -> &'static str {
         "heuristic-offline"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{LlmGateway, SkillBrief};
+
+    #[tokio::test]
+    async fn assign_theme_is_deterministic_and_nonempty() {
+        let h = HeuristicLlm;
+        let a = h.assign_theme("relancer la synchro bancaire", "…").await.unwrap();
+        let b = h.assign_theme("relancer la synchro bancaire", "…").await.unwrap();
+        assert_eq!(a, b);
+        assert!(!a.is_empty());
+    }
+
+    #[tokio::test]
+    async fn synthesize_agent_fills_identity() {
+        let h = HeuristicLlm;
+        let skills = vec![SkillBrief {
+            name: "data/synchro-bancaire".into(),
+            trigger: "relancer la synchro bancaire".into(),
+            body: "1. Vérifier le connecteur…".into(),
+        }];
+        let spec = h.synthesize_agent("data", "synchro bancaire", &skills).await.unwrap();
+        assert!(!spec.name.is_empty() && !spec.role.is_empty() && !spec.description.is_empty());
     }
 }

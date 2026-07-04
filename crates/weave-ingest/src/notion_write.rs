@@ -221,6 +221,7 @@ mod tests {
             name: "reconciliation-helper".into(),
             role: "Aide à la réconciliation bancaire".into(),
             domain: "finance-ops".into(),
+            description: "Spécialiste réconciliation.".into(),
             skills: vec!["match-tx".into(), "flag-anomaly".into()],
             scope: MemoryLevel::Team,
             status: AgentStatus::Active,
