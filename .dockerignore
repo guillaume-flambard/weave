@@ -1,0 +1,14 @@
+target
+apps
+docs
+scripts
+.git
+.jj
+.github
+.claude
+.agents
+.superpowers
+.gstack
+**/node_modules
+*.md
+sqlite_mcp_server.db

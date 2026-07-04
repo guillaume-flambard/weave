@@ -1,0 +1,61 @@
+# Weave production stack — fully isolated from the host (own PG container, own network).
+# Env (PG_PASSWORD, WEAVE_ENC_KEY, SLACK_*) come from --env-file on the VPS, never committed.
+services:
+  weave-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: weave-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: weave
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: weave
+    volumes:
+      - weave_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weave -d weave"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [weave]
+
+  weave-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: weave-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://weave:${PG_PASSWORD}@weave-postgres:5432/weave
+      WEAVE_ENC_KEY: ${WEAVE_ENC_KEY}
+      WEAVE_API_ADDR: 0.0.0.0:8787
+      WEAVE_WEB_URL: https://strayeye.com
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_REDIRECT_URI: https://strayeye.com/weave-api/oauth/slack/callback
+      SLACK_SCOPES: ${SLACK_SCOPES:-}
+    depends_on:
+      weave-postgres:
+        condition: service_healthy
+    networks: [weave]
+
+  weave-web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: weave-web
+    restart: unless-stopped
+    environment:
+      WEAVE_API_PROXY: http://weave-api:8787
+      NEXT_PUBLIC_WEAVE_API: /weave-api
+    ports:
+      - "127.0.0.1:3200:3200"
+    depends_on: [weave-api]
+    networks: [weave]
+
+volumes:
+  weave_pgdata:
+
+networks:
+  weave:
+    driver: bridge
