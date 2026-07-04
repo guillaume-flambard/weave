@@ -693,7 +693,43 @@ async fn approve_agent(
         .store
         .set_agent_status(&project, &req.name, AgentStatus::Active)
         .await?;
-    Ok(Json(json!({ "status": "active", "name": req.name, "project": project })))
+
+    // Best-effort: write the approved agent into Notion. Never fails approval.
+    let notion = push_agent_to_notion(&state, &project, &req.name).await;
+
+    Ok(Json(json!({ "status": "active", "name": req.name, "project": project, "notion": notion })))
+}
+
+/// Push the just-approved agent into Notion. Returns a status string for the
+/// response; any error is logged and downgraded to "failed" (best-effort).
+async fn push_agent_to_notion(state: &AppState, project: &str, name: &str) -> &'static str {
+    use weave_store::AgentStore;
+    let conn = match state.store.get_active_connection(&state.cipher, "notion").await {
+        Ok(Some(c)) => c,
+        Ok(None) => return "not_connected",
+        Err(e) => {
+            tracing::error!("notion connection lookup failed: {e}");
+            return "failed";
+        }
+    };
+    let agent = match state.store.agents(project).await {
+        Ok(list) => list.into_iter().find(|a| a.name == name),
+        Err(e) => {
+            tracing::error!("agent lookup failed: {e}");
+            return "failed";
+        }
+    };
+    let Some(agent) = agent else { return "failed" };
+    match weave_ingest::NotionWriter::new(conn.access_token)
+        .upsert_agent(&agent)
+        .await
+    {
+        Ok(_) => "written",
+        Err(e) => {
+            tracing::error!("notion write-back failed: {e}");
+            "failed"
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -1220,6 +1256,40 @@ mod tests {
         assert_eq!(agents_response.status(), StatusCode::OK);
         let agents_body = json_body(agents_response).await;
         assert!(agents_body.is_array());
+    }
+
+    #[tokio::test]
+    async fn approve_agent_reports_notion_not_connected() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let store = PgStore::from_pool(pool);
+        store.migrate().await.unwrap();
+
+        let project = unique_project("api-notion");
+        let name = "specialiste-ops-finance-ops";
+        store.insert_agent(&sample_agent(&project, name)).await.unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/agents/approve")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"project": project, "name": name}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let j = json_body(response).await;
+        assert_eq!(j["status"], "active");
+        // No Notion connection stored for this project's DB → best-effort reports not_connected.
+        assert_eq!(j["notion"], "not_connected");
     }
 
     #[tokio::test]
