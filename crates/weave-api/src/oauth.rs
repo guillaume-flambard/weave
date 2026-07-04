@@ -160,7 +160,7 @@ pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQue
             return web_redirect("connect_error=slack");
         }
     };
-    if let Err(e) = store_tokens(&state, tokens).await {
+    if let Err(e) = store_tokens(&state, "slack", tokens).await {
         tracing::error!("store slack connection failed: {e}");
         return web_redirect("connect_error=slack");
     }
@@ -168,19 +168,23 @@ pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQue
 }
 
 /// Redirect the browser back to the web app's sources view after an OAuth attempt.
-fn web_redirect(param: &str) -> Response {
+pub(crate) fn web_redirect(param: &str) -> Response {
     let web = std::env::var("WEAVE_WEB_URL").unwrap_or_else(|_| "http://localhost:3200".into());
     Redirect::to(&format!("{web}/?cmd=sources&{param}")).into_response()
 }
 
-/// Persist normalized tokens as the active Slack connection.
-pub(crate) async fn store_tokens(state: &AppState, t: OauthTokens) -> anyhow::Result<()> {
+/// Persist normalized tokens as the active connection for `provider`.
+pub(crate) async fn store_tokens(
+    state: &AppState,
+    provider: &str,
+    t: OauthTokens,
+) -> anyhow::Result<()> {
     state
         .store
         .upsert_connection(
             &state.cipher,
             &NewConnection {
-                provider: "slack".into(),
+                provider: provider.into(),
                 team_id: if t.team_id.is_empty() { "default".into() } else { t.team_id },
                 access_token: t.access_token,
                 refresh_token: t.refresh_token,
@@ -236,7 +240,7 @@ pub async fn ensure_fresh(
     if tokens.refresh_token.is_none() {
         tokens.refresh_token = conn.refresh_token.clone();
     }
-    store_tokens(state, tokens.clone()).await?;
+    store_tokens(state, "slack", tokens.clone()).await?;
 
     Ok(Connection {
         provider: conn.provider,
@@ -249,7 +253,7 @@ pub async fn ensure_fresh(
     })
 }
 
-fn urlencode(s: &str) -> String {
+pub(crate) fn urlencode(s: &str) -> String {
     // Minimal application/x-www-form-urlencoded for query values.
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -303,7 +307,7 @@ pub async fn import_from_env(
         team_id,
         scopes: cfg.scopes.clone(),
     };
-    if let Err(e) = store_tokens(&state, tokens).await {
+    if let Err(e) = store_tokens(&state, "slack", tokens).await {
         tracing::error!("store imported slack connection failed: {e}");
         return (StatusCode::INTERNAL_SERVER_ERROR, "could not store connection").into_response();
     }

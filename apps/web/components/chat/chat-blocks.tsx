@@ -40,8 +40,8 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const [busy, setBusy] = useState<string | null>(null);
   // Providers that are really connected in the backend (from GET /connections).
   const [live, setLive] = useState<Set<string> | null>(null);
-  // Optimistic connect for demo-only providers (Notion etc., no real OAuth yet).
-  const [override, setOverride] = useState<Record<string, "connected">>({});
+  // Providers with a real OAuth flow (button → full-page redirect).
+  const OAUTH = new Set(["slack", "notion"]);
   // Post-redirect flash: "connected" | "error" from ?connected/?connect_error.
   const [flash, setFlash] = useState<{ tone: "ok" | "err"; provider: string } | null>(null);
 
@@ -74,34 +74,29 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     };
   }, []);
 
-  // Slack: real backend state (GET /connections). Others: optimistic override,
-  // then demo profile when the API is unreachable.
+  // OAuth providers (Slack, Notion): real backend state from GET /connections,
+  // falling back to the demo profile only when the API is unreachable.
   const status = (id: string) => {
-    if (override[id]) return "connected";
-    if (id === "slack" && live) return live.has("slack") ? "connected" : "disconnected";
-    if (live) return live.has(id) ? "connected" : defaultConnectorStatus(id, orgId);
+    if (live) {
+      if (OAUTH.has(id)) return live.has(id) ? "connected" : "disconnected";
+      return live.has(id) ? "connected" : defaultConnectorStatus(id, orgId);
+    }
     return defaultConnectorStatus(id, orgId);
   };
 
+  // Connect → full-page OAuth redirect to the backend (→ provider consent).
   const connect = (id: string) => {
-    // Slack → full-page OAuth redirect to the backend (→ Slack consent).
-    if (id === "slack") {
-      setBusy(id);
-      window.location.href = authorizeUrl("slack");
-      return;
-    }
-    // Notion (demo, no real OAuth yet) → ingest + optimistic connected state.
+    if (id !== "slack" && id !== "notion") return;
     setBusy(id);
-    (id === "notion" ? ingestNotion(orgId) : Promise.resolve())
-      .then(() => setOverride((o) => ({ ...o, [id]: "connected" })))
-      .finally(() => setBusy(null));
+    window.location.href = authorizeUrl(id);
   };
 
-  // Sync is separate from connecting: pull messages from the stored Slack connection.
+  // Sync is separate from connecting: pull content from the stored connection.
   const sync = async (id: string) => {
     setBusy(id);
     try {
       if (id === "slack") await ingestSlack(orgId);
+      else if (id === "notion") await ingestNotion(orgId);
     } finally {
       setBusy(null);
     }
@@ -109,7 +104,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
 
   const renderRow = (c: (typeof primary)[0], isPrimary?: boolean) => {
     const connected = status(c.id) === "connected";
-    const connectable = c.id === "slack" || c.id === "notion";
+    const connectable = OAUTH.has(c.id);
     return (
       <div
         key={c.id}
@@ -134,7 +129,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
             {busy === c.id ? "…" : t("chat.connect")}
           </Button>
         )}
-        {connected && c.id === "slack" && (
+        {connected && connectable && (
           <Button variant="secondary" size="sm" disabled={busy === c.id} onClick={() => sync(c.id)}>
             {busy === c.id ? "…" : t("sources.sync")}
           </Button>

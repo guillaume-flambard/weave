@@ -158,7 +158,7 @@ export function fetchConnections() {
 }
 
 /** Full-page OAuth entrypoint. The browser navigates here; backend 302s to the provider. */
-export function authorizeUrl(provider: "slack") {
+export function authorizeUrl(provider: "slack" | "notion") {
   return `${API}/oauth/${provider}/authorize`;
 }
 

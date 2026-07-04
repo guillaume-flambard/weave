@@ -28,6 +28,7 @@ use weave_llm::{
 use weave_pipeline::{PipelineEvent, Runtime};
 use weave_store::{PgStore, Store};
 
+mod notion_oauth;
 mod oauth;
 
 const DEFAULT_PROJECT: &str = "pennylane";
@@ -183,6 +184,8 @@ fn build_app(state: AppState) -> Router {
         .route("/oauth/slack/authorize", get(oauth::authorize))
         .route("/oauth/slack/callback", get(oauth::callback))
         .route("/connections/slack/import", post(oauth::import_from_env))
+        .route("/oauth/notion/authorize", get(notion_oauth::authorize))
+        .route("/oauth/notion/callback", get(notion_oauth::callback))
         .layer(cors_layer())
         .with_state(state)
 }
@@ -512,7 +515,12 @@ async fn ingest_notion(
 ) -> Result<Json<Value>, AppError> {
     require_api_key(&state, &headers)?;
     let project = project_of(&q);
-    let token = std::env::var("NOTION_TOKEN").ok().filter(|t| !t.trim().is_empty());
+    // Prefer a stored OAuth connection (Notion tokens don't expire → no refresh),
+    // then fall back to the legacy env token (keeps the offline demo working).
+    let token = match state.store.get_active_connection(&state.cipher, "notion").await? {
+        Some(conn) => Some(conn.access_token),
+        None => std::env::var("NOTION_TOKEN").ok().filter(|t| !t.trim().is_empty()),
+    };
 
     let events = match token {
         Some(token) => {
