@@ -151,8 +151,25 @@ impl LlmGateway for HeuristicLlm {
         ))
     }
 
-    async fn assign_theme(&self, trigger: &str, _body: &str) -> anyhow::Result<String> {
-        Ok(crate::heuristic_theme(trigger))
+    async fn assign_theme(
+        &self,
+        trigger: &str,
+        _body: &str,
+        existing: &[String],
+    ) -> anyhow::Result<String> {
+        let fresh = crate::normalize_theme(&crate::heuristic_theme(trigger));
+        // Reuse an existing domain if it shares a significant token (controlled vocab).
+        let fresh_tokens: Vec<&str> = fresh.split_whitespace().collect();
+        for e in existing {
+            let en = crate::normalize_theme(e);
+            if en
+                .split_whitespace()
+                .any(|t| t.len() > 2 && fresh_tokens.contains(&t))
+            {
+                return Ok(en);
+            }
+        }
+        Ok(fresh)
     }
 
     async fn synthesize_agent(
@@ -183,10 +200,19 @@ mod tests {
     #[tokio::test]
     async fn assign_theme_is_deterministic_and_nonempty() {
         let h = HeuristicLlm;
-        let a = h.assign_theme("relancer la synchro bancaire", "…").await.unwrap();
-        let b = h.assign_theme("relancer la synchro bancaire", "…").await.unwrap();
+        let a = h.assign_theme("relancer la synchro bancaire", "…", &[]).await.unwrap();
+        let b = h.assign_theme("relancer la synchro bancaire", "…", &[]).await.unwrap();
         assert_eq!(a, b);
         assert!(!a.is_empty());
+        assert_eq!(a, crate::normalize_theme(&a)); // already canonical
+    }
+
+    #[tokio::test]
+    async fn assign_theme_reuses_existing_domain() {
+        let h = HeuristicLlm;
+        let existing = vec!["synchro paiements".to_string()];
+        let t = h.assign_theme("relancer la synchro bancaire", "…", &existing).await.unwrap();
+        assert_eq!(t, "synchro paiements"); // reused via shared "synchro" token
     }
 
     #[tokio::test]

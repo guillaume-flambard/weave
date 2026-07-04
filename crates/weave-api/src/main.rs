@@ -908,8 +908,13 @@ mod tests {
             Ok("stub skill".into())
         }
 
-        async fn assign_theme(&self, trigger: &str, _body: &str) -> anyhow::Result<String> {
-            Ok(weave_llm::heuristic_theme(trigger))
+        async fn assign_theme(
+            &self,
+            trigger: &str,
+            _body: &str,
+            _existing: &[String],
+        ) -> anyhow::Result<String> {
+            Ok(weave_llm::normalize_theme(&weave_llm::heuristic_theme(trigger)))
         }
 
         async fn synthesize_agent(

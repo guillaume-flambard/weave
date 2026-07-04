@@ -10,11 +10,14 @@ use serde::{Deserialize, Serialize};
 use weave_core::Event;
 
 mod claude;
+mod clean;
 mod embed;
 mod embed_ollama;
 mod heuristic;
 mod ollama;
 mod openai;
+
+pub use clean::{normalize_theme, parse_json_lenient, slug};
 
 pub use claude::ClaudeLlm;
 pub use embed::HashEmbedder;
@@ -107,6 +110,73 @@ pub fn heuristic_theme(trigger: &str) -> String {
         .join(" ")
 }
 
+/// Shared (system, user) prompt for theme assignment with a controlled vocabulary.
+pub(crate) fn theme_prompt(trigger: &str, body: &str, existing: &[String]) -> (String, String) {
+    let existing_list = if existing.is_empty() {
+        "(aucun pour l'instant)".to_string()
+    } else {
+        existing.join(", ")
+    };
+    let system = "Tu classes une compétence d'équipe par domaine métier. Réutilise EXACTEMENT \
+        un domaine existant s'il correspond, sinon propose un domaine LARGE et réutilisable \
+        (1 à 2 mots). Réponds en JSON strict: {\"theme\": \"...\"}. Minuscules, sans ponctuation."
+        .to_string();
+    let user = format!("Domaines existants: {existing_list}\nDéclencheur: {trigger}\nProcédure: {body}");
+    (system, user)
+}
+
+/// Parse + normalize a `{"theme": ...}` response; fall back to the heuristic theme.
+pub(crate) fn theme_from_response(js: &str, trigger: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct T {
+        #[serde(default)]
+        theme: String,
+    }
+    let theme = parse_json_lenient::<T>(js).map(|t| t.theme).unwrap_or_default();
+    let norm = normalize_theme(&theme);
+    if norm.is_empty() {
+        normalize_theme(&heuristic_theme(trigger))
+    } else {
+        norm
+    }
+}
+
+/// Shared (system, user) prompt for agent synthesis.
+pub(crate) fn agent_prompt(team: &str, theme: &str, skills: &[SkillBrief]) -> (String, String) {
+    let list = skills
+        .iter()
+        .map(|s| format!("- {} : {}", s.trigger, s.body))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let system = "Tu conçois un agent spécialiste d'équipe. Réponds en JSON strict \
+        {\"name\":..,\"role\":..,\"description\":..} : name = identifiant court kebab-case ; \
+        role = mandat en 2 phrases ; description = une phrase. En français."
+        .to_string();
+    let user = format!("Équipe: {team}\nThème: {theme}\nCompétences:\n{list}");
+    (system, user)
+}
+
+/// Parse + validate an agent JSON response; fall back to the heuristic identity,
+/// and always normalize the name to a deterministic slug.
+pub(crate) fn agent_from_response(
+    js: &str,
+    team: &str,
+    theme: &str,
+    skills: &[SkillBrief],
+) -> AgentSpec {
+    let mut spec =
+        parse_json_lenient::<AgentSpec>(js).unwrap_or_else(|_| heuristic_agent_spec(team, theme, skills));
+    if spec.name.trim().is_empty() || spec.role.trim().is_empty() || spec.description.trim().is_empty()
+    {
+        spec = heuristic_agent_spec(team, theme, skills);
+    }
+    spec.name = slug(&spec.name);
+    if spec.name.is_empty() {
+        spec.name = slug(&heuristic_agent_spec(team, theme, skills).name);
+    }
+    spec
+}
+
 /// Deterministic agent identity — offline mock and fallback when a real LLM's
 /// JSON can't be parsed.
 pub fn heuristic_agent_spec(team: &str, theme: &str, skills: &[SkillBrief]) -> AgentSpec {
@@ -138,8 +208,15 @@ pub trait LlmGateway: Send + Sync {
         answers: &[String],
     ) -> anyhow::Result<String>;
 
-    /// Assign a short free-text theme to a skill (e.g. "réconciliation bancaire").
-    async fn assign_theme(&self, trigger: &str, body: &str) -> anyhow::Result<String>;
+    /// Assign a canonical domain theme to a skill. `existing` lists the project's
+    /// current domains so the model reuses one when it fits (controlled vocabulary),
+    /// keeping the theme space consolidated. The returned theme is normalized.
+    async fn assign_theme(
+        &self,
+        trigger: &str,
+        body: &str,
+        existing: &[String],
+    ) -> anyhow::Result<String>;
 
     /// Synthesize a specialist agent's identity from a cluster of skills.
     async fn synthesize_agent(

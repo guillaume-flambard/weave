@@ -126,20 +126,18 @@ impl LlmGateway for OllamaLlm {
         }
     }
 
-    async fn assign_theme(&self, trigger: &str, body: &str) -> anyhow::Result<String> {
-        let system = "Tu classes une compétence d'équipe par domaine métier. Réponds par le \
-            domaine LARGE et réutilisable, le plus général possible (1 à 2 mots max), en \
-            minuscules, sans ponctuation. Vise un domaine que plusieurs compétences proches \
-            partageraient. Le domaine seul, rien d'autre.";
-        let user = format!("Déclencheur: {trigger}\nProcédure: {body}");
-        match self.chat(system, &user, false).await {
-            Ok(t) => {
-                let theme = t.trim().lines().next().unwrap_or("").trim().to_lowercase();
-                Ok(if theme.is_empty() { crate::heuristic_theme(trigger) } else { theme })
-            }
+    async fn assign_theme(
+        &self,
+        trigger: &str,
+        body: &str,
+        existing: &[String],
+    ) -> anyhow::Result<String> {
+        let (system, user) = crate::theme_prompt(trigger, body, existing);
+        match self.chat(&system, &user, true).await {
+            Ok(js) => Ok(crate::theme_from_response(&js, trigger)),
             Err(e) => {
                 tracing::warn!("Ollama assign_theme failed ({e}); using heuristic");
-                self.fallback.assign_theme(trigger, body).await
+                self.fallback.assign_theme(trigger, body, existing).await
             }
         }
     }
@@ -150,18 +148,9 @@ impl LlmGateway for OllamaLlm {
         theme: &str,
         skills: &[crate::SkillBrief],
     ) -> anyhow::Result<crate::AgentSpec> {
-        let list = skills
-            .iter()
-            .map(|s| format!("- {} : {}", s.trigger, s.body))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let system = "Tu conçois un agent spécialiste d'équipe. Réponds en JSON strict \
-            {\"name\":..,\"role\":..,\"description\":..} : name = identifiant court en kebab-case ; \
-            role = mandat en 2 phrases ; description = une phrase.";
-        let user = format!("Équipe: {team}\nThème: {theme}\nCompétences:\n{list}");
-        match self.chat(system, &user, true).await {
-            Ok(js) => Ok(serde_json::from_str::<crate::AgentSpec>(&js)
-                .unwrap_or_else(|_| crate::heuristic_agent_spec(team, theme, skills))),
+        let (system, user) = crate::agent_prompt(team, theme, skills);
+        match self.chat(&system, &user, true).await {
+            Ok(js) => Ok(crate::agent_from_response(&js, team, theme, skills)),
             Err(e) => {
                 tracing::warn!("Ollama synthesize_agent failed ({e}); using heuristic");
                 self.fallback.synthesize_agent(team, theme, skills).await

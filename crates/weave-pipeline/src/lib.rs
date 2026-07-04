@@ -396,11 +396,21 @@ impl Runtime {
             .synthesize_skill(&signature, &fact.topic, &answers)
             .await?;
 
-        // Assign a free-text theme so this skill can cluster into a specialist
-        // agent. Best-effort: a failure leaves the skill un-themed (not clustered).
+        // Assign a canonical domain theme so this skill can cluster into a
+        // specialist. The model reuses an existing project domain when it fits
+        // (controlled vocabulary → consolidated data). Best-effort: on failure the
+        // skill stays un-themed (not clustered).
+        let existing_themes: Vec<String> = dedup(
+            self.store
+                .skills(&event.project)
+                .await?
+                .into_iter()
+                .map(|s| s.theme)
+                .filter(|t| !t.trim().is_empty()),
+        );
         let theme = self
             .llm
-            .assign_theme(&fact.topic, &body)
+            .assign_theme(&fact.topic, &body, &existing_themes)
             .await
             .unwrap_or_default();
 
