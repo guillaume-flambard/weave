@@ -127,8 +127,10 @@ impl LlmGateway for OllamaLlm {
     }
 
     async fn assign_theme(&self, trigger: &str, body: &str) -> anyhow::Result<String> {
-        let system = "Tu classes une compétence d'équipe. Réponds par un thème court \
-            (2 à 4 mots), en minuscules, sans ponctuation. Le thème seul, rien d'autre.";
+        let system = "Tu classes une compétence d'équipe par domaine métier. Réponds par le \
+            domaine LARGE et réutilisable, le plus général possible (1 à 2 mots max), en \
+            minuscules, sans ponctuation. Vise un domaine que plusieurs compétences proches \
+            partageraient. Le domaine seul, rien d'autre.";
         let user = format!("Déclencheur: {trigger}\nProcédure: {body}");
         match self.chat(system, &user, false).await {
             Ok(t) => {
