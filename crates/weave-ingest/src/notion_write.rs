@@ -101,6 +101,19 @@ impl NotionWriter {
             .await?)
     }
 
+    async fn get(&self, path: &str) -> anyhow::Result<Value> {
+        Ok(self
+            .client
+            .get(format!("{}{path}", self.api_base))
+            .bearer_auth(&self.token)
+            .header("Notion-Version", NOTION_VERSION)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
     /// Resolve the parent page: `NOTION_PARENT_PAGE_ID`, else the first page from `/search`.
     async fn resolve_parent(&self) -> anyhow::Result<String> {
         if let Ok(id) = std::env::var("NOTION_PARENT_PAGE_ID") {
@@ -121,22 +134,21 @@ impl NotionWriter {
     }
 
     /// Find the "Weave Agents" database or create it under `parent`.
+    ///
+    /// Looks in the parent page's direct children rather than `/search`: Notion's
+    /// search index lags behind creation, so a freshly-made database is invisible
+    /// to `/search` for a while — which would spawn duplicate databases on every
+    /// write until the index caught up. Listing children is immediately consistent.
     async fn ensure_database(&self, parent: &str) -> anyhow::Result<String> {
-        let resp = self
-            .post(
-                "/search",
-                json!({
-                    "query": DB_TITLE,
-                    "filter": { "value": "database", "property": "object" },
-                    "page_size": 10
-                }),
-            )
+        let kids = self
+            .get(&format!("/blocks/{parent}/children?page_size=100"))
             .await?;
-        if let Some(results) = resp["results"].as_array() {
-            for db in results {
-                let title = db["title"][0]["plain_text"].as_str().unwrap_or_default();
-                if title == DB_TITLE {
-                    if let Some(id) = db["id"].as_str() {
+        if let Some(results) = kids["results"].as_array() {
+            for block in results {
+                if block["type"] == "child_database"
+                    && block["child_database"]["title"].as_str() == Some(DB_TITLE)
+                {
+                    if let Some(id) = block["id"].as_str() {
                         return Ok(id.to_string());
                     }
                 }
@@ -246,10 +258,15 @@ mod tests {
     #[tokio::test]
     async fn upsert_creates_when_absent() {
         let server = MockServer::start().await;
+        // resolve_parent → /search returns a page
         Mock::given(method("POST")).and(path("/search"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "results": [ { "id": "parent-page", "object": "page" } ]
             })))
+            .mount(&server).await;
+        // ensure_database → parent has no child databases yet
+        Mock::given(method("GET")).and(path_regex(r"^/blocks/.+/children$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
             .mount(&server).await;
         Mock::given(method("POST")).and(path("/databases"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": "db-1" })))
@@ -270,10 +287,11 @@ mod tests {
     #[tokio::test]
     async fn upsert_updates_when_present() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/search"))
+        // ensure_database → parent already has the "Weave Agents" child database
+        Mock::given(method("GET")).and(path_regex(r"^/blocks/.+/children$"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "results": [ { "id": "db-1", "object": "database",
-                    "title": [ { "plain_text": "Weave Agents" } ] } ]
+                "results": [ { "id": "db-1", "type": "child_database",
+                    "child_database": { "title": "Weave Agents" } } ]
             })))
             .mount(&server).await;
         Mock::given(method("POST")).and(path_regex(r"^/databases/.+/query$"))

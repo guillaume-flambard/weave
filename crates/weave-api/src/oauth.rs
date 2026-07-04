@@ -26,8 +26,14 @@ pub fn verify_state(secret: &str, state: &str, now_unix: i64) -> bool {
         return false;
     }
     let (nonce, exp, sig) = (parts[0], parts[1], parts[2]);
+    let Ok(sig_bytes) = URL_SAFE_NO_PAD.decode(sig) else {
+        return false;
+    };
     let payload = format!("{nonce}.{exp}");
-    if sign(secret, &payload) != sig {
+    // Constant-time HMAC verification (avoids a timing side-channel on the CSRF sig).
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("hmac accepts any key len");
+    mac.update(payload.as_bytes());
+    if mac.verify_slice(&sig_bytes).is_err() {
         return false;
     }
     let Ok(exp) = exp.parse::<i64>() else { return false };
@@ -62,7 +68,8 @@ pub fn parse_oauth_response(v: &serde_json::Value, now: DateTime<Utc>) -> anyhow
     let refresh_token = v["refresh_token"].as_str().map(|s| s.to_string());
     let expires_at = v["expires_in"]
         .as_i64()
-        .filter(|s| *s > 0)
+        // 1s..10y: reject a malicious/garbage value that would overflow the datetime add.
+        .filter(|s| (1..=315_360_000).contains(s))
         .map(|s| now + Duration::seconds(s));
     let team_id = v["team"]["id"].as_str().unwrap_or_default().to_string();
     let scopes = v["scope"].as_str().unwrap_or_default().to_string();

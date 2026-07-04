@@ -269,8 +269,10 @@ fn require_api_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError
         .and_then(|v| v.strip_prefix("Bearer "))
         .or_else(|| headers.get("x-api-key").and_then(|h| h.to_str().ok()));
 
+    // Constant-time compare so a wrong key can't be recovered via response timing.
+    use subtle::ConstantTimeEq;
     match provided {
-        Some(value) if value == expected => Ok(()),
+        Some(value) if bool::from(value.as_bytes().ct_eq(expected.as_bytes())) => Ok(()),
         _ => Err(AppError::unauthorized("missing or invalid API key")),
     }
 }
