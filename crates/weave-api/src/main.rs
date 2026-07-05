@@ -28,6 +28,7 @@ use weave_llm::{
 use weave_pipeline::{PipelineEvent, Runtime};
 use weave_store::{PgStore, Store};
 
+mod discord_oauth;
 mod notion_oauth;
 mod oauth;
 
