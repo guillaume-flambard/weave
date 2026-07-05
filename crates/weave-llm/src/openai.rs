@@ -86,7 +86,7 @@ impl LlmGateway for OpenaiLlm {
             event.source, event.actor, event.kind, event.project, event.payload
         );
         match self.chat(system, &user, true).await {
-            Ok(text) => match serde_json::from_str::<Extraction>(text.trim()) {
+            Ok(text) => match crate::parse_json_lenient::<Extraction>(&text) {
                 Ok(ext) if !ext.facts.is_empty() => Ok(ext),
                 _ => {
                     tracing::warn!("OpenAI extract parse thin/failed; using heuristic");

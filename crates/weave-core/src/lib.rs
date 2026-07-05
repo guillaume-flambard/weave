@@ -134,6 +134,9 @@ pub struct Fact {
     pub content: String,
     pub confidence: f32,
     pub memory_level: MemoryLevel,
+    /// Deterministic dedup signature over (topic, content); duplicates are dropped.
+    #[serde(default)]
+    pub content_sig: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
     pub created_at: DateTime<Utc>,
@@ -306,9 +309,44 @@ pub fn normalize_signature(topic: &str) -> String {
     words.join(" ")
 }
 
+/// Deterministic dedup key for a fact: normalized topic signature + normalized
+/// content. Two near-identical facts (re-worded) collapse to the same key.
+pub fn fact_dedup_key(topic: &str, content: &str) -> String {
+    let content_norm: String = content
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(200)
+        .collect();
+    format!("{}|{}", normalize_signature(topic), content_norm)
+}
+
+/// Canonical entity name: trimmed with internal whitespace collapsed. Casing is
+/// preserved (proper nouns), so only whitespace noise is merged.
+pub fn normalize_entity_name(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fact_dedup_key_collapses_near_duplicates() {
+        let a = fact_dedup_key("Relancer la synchro ?", "Utiliser BankSync.rerun(client_id)");
+        let b = fact_dedup_key("relancer synchro", "utiliser  BankSync.rerun(client_id)");
+        assert_eq!(a, b);
+        let c = fact_dedup_key("Déployer en staging", "Utiliser BankSync.rerun(client_id)");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn normalize_entity_name_collapses_whitespace() {
+        assert_eq!(normalize_entity_name("  Bridge   Sync "), "Bridge Sync");
+        assert_eq!(normalize_entity_name("Bridge"), "Bridge");
+    }
 
     #[test]
     fn signature_collapses_equivalent_questions() {

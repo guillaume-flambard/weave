@@ -213,16 +213,20 @@ impl Runtime {
         // Entities (graph nodes).
         let mut name_to_id: HashMap<String, Uuid> = HashMap::new();
         for e in &extraction.entities {
+            let name = weave_core::normalize_entity_name(&e.name);
+            if name.is_empty() {
+                continue;
+            }
             let entity = Entity {
                 id: Uuid::new_v4(),
                 project: event.project.clone(),
-                name: e.name.clone(),
+                name: name.clone(),
                 kind: e.kind.clone(),
             };
             let id = self.store.upsert_entity(&entity).await?;
-            name_to_id.insert(e.name.clone(), id);
+            name_to_id.insert(name.clone(), id);
             self.emit(PipelineEvent::EntityUpserted {
-                name: e.name.clone(),
+                name,
                 kind: e.kind.clone(),
             });
         }
@@ -254,10 +258,15 @@ impl Runtime {
             if event.payload.get("reply_to").is_some() && !matches!(ftype, FactType::Question) {
                 ftype = FactType::Answer;
             }
-            let embedding = self
-                .embedder
-                .embed(&format!("{} {}", ef.topic, ef.content))
-                .await?;
+            // Clean fields on the way in, and derive a deterministic dedup key.
+            let topic = ef.topic.trim().to_string();
+            let content = ef.content.trim().to_string();
+            let author = ef.author.trim().to_string();
+            if topic.is_empty() || content.is_empty() {
+                continue;
+            }
+            let content_sig = weave_core::fact_dedup_key(&topic, &content);
+            let embedding = self.embedder.embed(&format!("{topic} {content}")).await?;
             let fact = Fact {
                 id: Uuid::new_v4(),
                 event_id: Some(event.id),
@@ -265,15 +274,20 @@ impl Runtime {
                 team: payload_str(event, "team"),
                 workstream: payload_str(event, "workstream"),
                 ftype,
-                author: ef.author.clone(),
-                topic: ef.topic.clone(),
-                content: ef.content.clone(),
+                author,
+                topic,
+                content,
                 confidence: ef.confidence,
                 memory_level: infer_memory_level(event, ftype),
+                content_sig,
                 embedding: Some(embedding),
                 created_at: Utc::now(),
             };
-            self.store.insert_fact(&fact).await?;
+            // Dedup: a content-signature duplicate is dropped — don't emit or
+            // detect patterns for it (keeps memory and emergence clean).
+            if !self.store.insert_fact(&fact).await? {
+                continue;
+            }
             self.emit(PipelineEvent::FactExtracted {
                 id: fact.id,
                 ftype: ftype.as_str().into(),
@@ -303,13 +317,14 @@ impl Runtime {
         name: &str,
         cache: &mut HashMap<String, Uuid>,
     ) -> anyhow::Result<Uuid> {
-        if let Some(id) = cache.get(name) {
+        let name = weave_core::normalize_entity_name(name);
+        if let Some(id) = cache.get(&name) {
             return Ok(*id);
         }
         let entity = Entity {
             id: Uuid::new_v4(),
             project: project.to_string(),
-            name: name.to_string(),
+            name: name.clone(),
             kind: "concept".into(),
         };
         let id = self.store.upsert_entity(&entity).await?;

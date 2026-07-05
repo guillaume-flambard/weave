@@ -1008,6 +1008,7 @@ mod tests {
             content: "Utiliser BankSync.rerun(client_id)".into(),
             confidence: 0.95,
             memory_level: MemoryLevel::Project,
+            content_sig: String::new(),
             embedding: None,
             created_at: chrono::Utc::now(),
         }

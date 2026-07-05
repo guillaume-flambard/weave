@@ -53,18 +53,6 @@ impl ClaudeLlm {
     }
 }
 
-/// Strip ```json fences if the model wrapped its output.
-fn unfence(s: &str) -> &str {
-    let s = s.trim();
-    if let Some(rest) = s.strip_prefix("```json") {
-        return rest.trim_end_matches("```").trim();
-    }
-    if let Some(rest) = s.strip_prefix("```") {
-        return rest.trim_end_matches("```").trim();
-    }
-    s
-}
-
 #[async_trait]
 impl LlmGateway for ClaudeLlm {
     async fn extract(&self, event: &Event) -> anyhow::Result<Extraction> {
@@ -80,7 +68,7 @@ impl LlmGateway for ClaudeLlm {
         );
 
         match self.complete(system, &user, 1024).await {
-            Ok(text) => match serde_json::from_str::<Extraction>(unfence(&text)) {
+            Ok(text) => match crate::parse_json_lenient::<Extraction>(&text) {
                 Ok(ext) => Ok(ext),
                 Err(e) => {
                     tracing::warn!("Claude extract parse failed ({e}); using heuristic");

@@ -78,6 +78,7 @@ fn row_to_fact(row: &PgRow) -> Fact {
         content: row.get("content"),
         confidence: row.get("confidence"),
         memory_level: MemoryLevel::from_str_lossy(row.get::<String, _>("memory_level").as_str()),
+        content_sig: row.try_get("content_sig").unwrap_or_default(),
         embedding: None, // not read back; only used for storage/search
         created_at: row.get::<DateTime<Utc>, _>("created_at"),
     }
@@ -143,11 +144,12 @@ impl EventStore for PgStore {
 
 #[async_trait]
 impl FactStore for PgStore {
-    async fn insert_fact(&self, fact: &Fact) -> anyhow::Result<()> {
+    async fn insert_fact(&self, fact: &Fact) -> anyhow::Result<bool> {
         let embedding = fact.embedding.as_ref().map(|e| to_pgvector(e));
-        sqlx::query(
-            "INSERT INTO facts (id, event_id, project, team, workstream, ftype, author, topic, content, confidence, memory_level, embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, $12::vector)",
+        let res = sqlx::query(
+            "INSERT INTO facts (id, event_id, project, team, workstream, ftype, author, topic, content, confidence, memory_level, content_sig, embedding)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, $13::vector)
+             ON CONFLICT (project, content_sig) WHERE content_sig <> '' DO NOTHING",
         )
         .bind(fact.id)
         .bind(fact.event_id)
@@ -160,10 +162,11 @@ impl FactStore for PgStore {
         .bind(&fact.content)
         .bind(fact.confidence)
         .bind(fact.memory_level.as_str())
+        .bind(&fact.content_sig)
         .bind(embedding)
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(res.rows_affected() > 0)
     }
 
     async fn recent_facts(&self, project: &str, limit: i64) -> anyhow::Result<Vec<Fact>> {

@@ -23,7 +23,8 @@ pub trait EventStore: Send + Sync {
 /// Atomic facts, with vector + full-text retrieval.
 #[async_trait]
 pub trait FactStore: Send + Sync {
-    async fn insert_fact(&self, fact: &Fact) -> anyhow::Result<()>;
+    /// Insert a fact; returns `false` if it was a content-signature duplicate.
+    async fn insert_fact(&self, fact: &Fact) -> anyhow::Result<bool>;
     async fn recent_facts(&self, project: &str, limit: i64) -> anyhow::Result<Vec<Fact>>;
     /// Vector similarity search (pgvector `<=>`).
     async fn similar_facts(

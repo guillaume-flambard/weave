@@ -46,9 +46,29 @@ fn sample_fact(project: &str) -> Fact {
         content: "Utiliser BankSync.rerun(client_id)".into(),
         confidence: 0.95,
         memory_level: MemoryLevel::Project,
+        content_sig: weave_core::fact_dedup_key(
+            "relancer synchro bancaire",
+            "Utiliser BankSync.rerun(client_id)",
+        ),
         embedding: None,
         created_at: Utc::now(),
     }
+}
+
+#[tokio::test]
+async fn insert_fact_dedups_by_content_signature() {
+    let Some(store) = test_store().await else {
+        eprintln!("skipping postgres integration test: TEST_DATABASE_URL not set or unavailable");
+        return;
+    };
+    let project = unique_project("store-dedup");
+    let mut a = sample_fact(&project);
+    let mut b = sample_fact(&project); // same content_sig, same project
+    a.id = Uuid::new_v4();
+    b.id = Uuid::new_v4();
+    assert!(store.insert_fact(&a).await.unwrap()); // inserted
+    assert!(!store.insert_fact(&b).await.unwrap()); // duplicate → skipped
+    assert_eq!(store.recent_facts(&project, 10).await.unwrap().len(), 1);
 }
 
 fn sample_skill(project: &str, name: &str) -> Skill {
