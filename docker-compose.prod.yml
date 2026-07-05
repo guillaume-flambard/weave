@@ -45,7 +45,7 @@ services:
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
-      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-https://strayeye.com/api/oauth/discord/callback}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-https://strayeye.com/weave-api/oauth/discord/callback}
       WEAVE_LLM_PROVIDER: ${WEAVE_LLM_PROVIDER:-heuristic}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
