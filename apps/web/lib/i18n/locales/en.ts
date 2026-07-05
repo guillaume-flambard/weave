@@ -17,6 +17,7 @@ export const messages = {
   status: {
     live: "live",
     offline: "offline",
+    llmProvider: "Active LLM provider",
   },
   locale: {
     label: "Language",
@@ -190,6 +191,7 @@ export const messages = {
     askDemo: "Ask the question",
     finish: "Finish",
     working: "Working…",
+    analysing: "Analysis in progress — follow the reasoning below",
     composerLocked: "Use the button above to continue the introduction.",
     skippedBody:
       "Introduction skipped. Type / for commands, or use the shortcuts below the input.",

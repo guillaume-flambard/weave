@@ -6,6 +6,7 @@ import { useShellHeader } from "../layout/use-shell-header";
 import { useT } from "../../lib/i18n/context";
 import { ChatComposer } from "./chat-composer";
 import { ChatThread } from "./chat-thread";
+import { OnboardingProvider } from "./onboarding/onboarding-context";
 import { useWeaveChat } from "./use-weave-chat";
 import type { OrgCfg } from "../../lib/types";
 
@@ -15,20 +16,30 @@ function ChatShellInner() {
   const { dash } = chat;
 
   const orgSwitcher = useMemo(() => (
-    dash.presets.length > 0 ? (
-      <select
-        value={dash.orgId}
-        onChange={(e) => dash.switchOrg(e.target.value)}
-        disabled={dash.pendingAction === "switchOrg"}
-        aria-label={t("nav.org")}
-        className="h-9 border border-line rounded-md bg-surface px-2.5 text-sm text-ink font-sans cursor-pointer"
-      >
-        {dash.presets.map((p: OrgCfg) => (
-          <option key={p.org} value={p.org}>{p.name}</option>
-        ))}
-      </select>
-    ) : null
-  ), [dash.orgId, dash.pendingAction, dash.presets, dash.switchOrg, t]);
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      {dash.llm && (
+        <span
+          className="hidden sm:inline text-[10px] font-mono uppercase tracking-wide text-muted px-2 py-1 rounded-md bg-subtle border border-line-soft"
+          title={t("status.llmProvider")}
+        >
+          {dash.llm}
+        </span>
+      )}
+      {dash.presets.length > 0 ? (
+        <select
+          value={dash.orgId}
+          onChange={(e) => dash.switchOrg(e.target.value)}
+          disabled={dash.pendingAction === "switchOrg"}
+          aria-label={t("nav.org")}
+          className="h-9 border border-line rounded-md bg-surface px-2.5 text-sm text-ink font-sans cursor-pointer"
+        >
+          {dash.presets.map((p: OrgCfg) => (
+            <option key={p.org} value={p.org}>{p.name}</option>
+          ))}
+        </select>
+      ) : null}
+    </div>
+  ), [dash.orgId, dash.llm, dash.pendingAction, dash.presets, dash.switchOrg, t]);
 
   useShellHeader({ actions: orgSwitcher });
 
@@ -49,7 +60,9 @@ function ChatShellInner() {
 export function ChatShell() {
   return (
     <Suspense fallback={<div className="flex-1 min-h-[50vh]" />}>
-      <ChatShellInner />
+      <OnboardingProvider>
+        <ChatShellInner />
+      </OnboardingProvider>
     </Suspense>
   );
 }

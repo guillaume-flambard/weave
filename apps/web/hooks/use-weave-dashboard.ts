@@ -269,6 +269,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
           facts: stats.facts,
           skills: stats.skills.length,
         });
+        if (stats.llm) setLlm(stats.llm);
       } catch {
         // ignore polling errors during simulation
       }

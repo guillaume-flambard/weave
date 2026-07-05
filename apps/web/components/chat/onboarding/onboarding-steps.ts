@@ -2,6 +2,8 @@ import type { ParsedIntent } from "../types";
 
 export const ONBOARDING_STORAGE_KEY = "weave_onboarding_done";
 
+export { ONBOARDING_STATE_KEY, ONBOARDING_LEGACY_DONE_KEY } from "./onboarding-storage";
+
 export type OnboardingStepId = "intro" | "sources" | "simulate" | "feed" | "ask" | "govern";
 
 export type OnboardingStepDef = {

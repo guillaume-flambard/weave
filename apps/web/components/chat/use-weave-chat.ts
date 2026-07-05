@@ -6,7 +6,7 @@ import { askMemory } from "../../lib/api";
 import { useLocale } from "../../lib/i18n/context";
 import { useWeaveDashboard } from "../../hooks/use-weave-dashboard";
 import { intentLabel, parseChatInput } from "./chat-orchestrator";
-import { useChatOnboarding } from "./onboarding/use-chat-onboarding";
+import { useOnboarding } from "./onboarding/onboarding-context";
 import type { ChatBlock, ChatTurn, ParsedIntent } from "./types";
 
 function newTurnId(): string {
@@ -16,7 +16,7 @@ function newTurnId(): string {
 export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
   const { t } = useLocale();
   const searchParams = useSearchParams();
-  const onboarding = useChatOnboarding();
+  const onboarding = useOnboarding();
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -24,6 +24,7 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
   const feedSeen = useRef(0);
   const streamingSim = useRef(false);
   const onboardingSeeded = useRef(false);
+  const simulateDoneHandled = useRef(false);
 
   const dash = useWeaveDashboard(onSkillEmerged);
 
@@ -142,6 +143,7 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
       }
 
       if (step.waitForSimulate) {
+        simulateDoneHandled.current = false;
         onboarding.markAwaitingSimulate();
         appendTurn(userLabel, intentBlocks);
         setBusy(false);
@@ -194,9 +196,9 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     void submit(cmd);
   }, [appendBlocks, onboarding.isActive, submit, t]);
 
-  // Seed onboarding intro
+  // Seed onboarding at current persisted step
   useEffect(() => {
-    if (onboarding.status === "loading") return;
+    if (!onboarding.hydrated || onboarding.status === "loading") return;
     const restart = searchParams.get("onboarding") === "restart";
     if (restart && onboarding.isActive) {
       onboardingSeeded.current = true;
@@ -207,8 +209,9 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     if (!onboarding.isActive) return;
     if (searchParams.get("cmd")) return;
     onboardingSeeded.current = true;
-    setTurns([{ id: newTurnId(), blocks: [{ type: "onboarding", stepId: "intro" }] }]);
-  }, [onboarding.isActive, onboarding.status, searchParams]);
+    const stepId = onboarding.currentStepId ?? "intro";
+    setTurns([{ id: newTurnId(), blocks: [{ type: "onboarding", stepId }] }]);
+  }, [onboarding.hydrated, onboarding.isActive, onboarding.status, onboarding.currentStepId, searchParams]);
 
   // URL ?cmd=
   useEffect(() => {
@@ -230,26 +233,41 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     if (intent) void runIntent(intent);
   }, [onboarding.isActive, runIntent, searchParams, t]);
 
+  const completeOnboardingSimulate = useCallback(() => {
+    if (simulateDoneHandled.current) return;
+    if (!onboarding.isActive || !onboarding.awaitingSimulate) return;
+    simulateDoneHandled.current = true;
+    streamingSim.current = false;
+    onboarding.onSimulateDone();
+    appendBlocks([
+      { type: "system", content: t("chat.simulateDone"), kind: "success" },
+      { type: "feed_strip", limit: 12 },
+      { type: "onboarding", stepId: "feed" },
+    ]);
+  }, [appendBlocks, onboarding, t]);
+
   // Track feed length during simulation (live trace renders inside sim_progress block)
   useEffect(() => {
     if (!streamingSim.current && dash.pendingAction !== "simulate") return;
     feedSeen.current = dash.feed.length;
   }, [dash.feed, dash.pendingAction]);
 
+  // Finish onboarding simulate step when batch completes (SSE or pendingAction clear)
   useEffect(() => {
+    if (!onboarding.awaitingSimulate) return;
+    const sseDone = dash.feed.some((e) => e.type === "simulation_complete");
+    const actionDone = streamingSim.current && dash.pendingAction !== "simulate";
+    if (sseDone || actionDone) completeOnboardingSimulate();
+  }, [dash.feed, dash.pendingAction, onboarding.awaitingSimulate, completeOnboardingSimulate]);
+
+  // Non-onboarding simulate: success message only
+  useEffect(() => {
+    if (onboarding.awaitingSimulate) return;
     if (dash.pendingAction !== "simulate" && streamingSim.current) {
       streamingSim.current = false;
-      const blocks: ChatBlock[] = [
-        { type: "system", content: t("chat.simulateDone"), kind: "success" },
-      ];
-      if (onboarding.isActive && onboarding.awaitingSimulate) {
-        onboarding.onSimulateDone();
-        blocks.push({ type: "feed_strip", limit: 12 });
-        blocks.push({ type: "onboarding", stepId: "feed" });
-      }
-      appendBlocks(blocks);
+      appendBlocks([{ type: "system", content: t("chat.simulateDone"), kind: "success" }]);
     }
-  }, [dash.pendingAction, appendBlocks, onboarding, t]);
+  }, [dash.pendingAction, appendBlocks, onboarding.awaitingSimulate, t]);
 
   const flashRef = useRef(dash.flash);
   useEffect(() => {

@@ -78,7 +78,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run smoke E2E
-        run: pnpm test:e2e tests/e2e/smoke.spec.ts
+        run: pnpm test:e2e tests/e2e/smoke.spec.ts tests/e2e/onboarding.spec.ts
 
   e2e-hero:
     name: Hero E2E (API + UI)
@@ -156,6 +156,6 @@ jobs:
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run hero E2E
+      - name: Run hero + API E2E
         working-directory: apps/web
-        run: pnpm exec playwright test tests/e2e/hero.spec.ts
+        run: pnpm exec playwright test tests/e2e/hero.spec.ts tests/e2e/api.spec.ts

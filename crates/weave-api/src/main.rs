@@ -161,6 +161,7 @@ async fn main() -> anyhow::Result<()> {
 fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/openapi.yaml", get(serve_openapi))
         .route("/replay", post(replay))
         .route("/ingest/slack", post(ingest_slack))
         .route("/ingest/notion", post(ingest_notion))
@@ -257,6 +258,13 @@ fn embed_model() -> String {
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "status": "ok", "service": "weave", "llm": state.runtime.llm_name() }))
+}
+
+async fn serve_openapi() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/yaml")],
+        include_str!("../../../docs/api/openapi.yaml"),
+    )
 }
 
 fn require_api_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
@@ -1093,6 +1101,42 @@ mod tests {
         let body = json_body(response).await;
         assert_eq!(body["status"], "ok");
         assert_eq!(body["llm"], "stub");
+    }
+
+    #[tokio::test]
+    async fn openapi_yaml_is_served() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/openapi.yaml")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let ct = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(ct.contains("yaml"), "content-type was {ct}");
+
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let yaml = String::from_utf8(bytes.to_vec()).expect("utf8");
+        assert!(yaml.starts_with("openapi: 3.1"));
+        assert!(yaml.contains("  /health:"));
+        assert!(yaml.contains("  /ask:"));
+        assert!(yaml.contains("  /openapi.yaml:"));
+        assert!(yaml.contains("Weave Cognitive Runtime API"));
     }
 
     #[tokio::test]

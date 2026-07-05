@@ -17,6 +17,7 @@ export const messages = {
   status: {
     live: "en direct",
     offline: "hors ligne",
+    llmProvider: "Modèle LLM actif",
   },
   locale: {
     label: "Langue",
@@ -193,6 +194,7 @@ export const messages = {
     askDemo: "Poser la question",
     finish: "Terminer",
     working: "En cours…",
+    analysing: "Analyse en cours — suivez le raisonnement ci-dessous",
     composerLocked: "Utilisez le bouton ci-dessus pour avancer dans l'introduction.",
     skippedBody:
       "Introduction passée. Tapez / pour voir les commandes, ou utilisez les raccourcis sous le champ de saisie.",

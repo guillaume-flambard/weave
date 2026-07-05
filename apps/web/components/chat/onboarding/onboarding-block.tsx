@@ -10,6 +10,7 @@ export function OnboardingBlock({
   stepIndex,
   stepCount,
   busy,
+  waiting,
   onAction,
   onSkip,
 }: {
@@ -17,6 +18,8 @@ export function OnboardingBlock({
   stepIndex: number;
   stepCount: number;
   busy?: boolean;
+  /** Simulation (or other long action) running — hide CTA, show status */
+  waiting?: boolean;
   onAction: () => void;
   onSkip: () => void;
 }) {
@@ -29,13 +32,15 @@ export function OnboardingBlock({
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted">
           {t("onboarding.progress", { current: stepIndex + 1, total: stepCount })}
         </span>
-        <button
-          type="button"
-          onClick={onSkip}
-          className="border-none bg-transparent p-0 text-[11px] font-medium text-muted hover:text-ink-soft cursor-pointer font-sans"
-        >
-          {t("onboarding.skip")}
-        </button>
+        {!waiting && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="border-none bg-transparent p-0 text-[11px] font-medium text-muted hover:text-ink-soft cursor-pointer font-sans"
+          >
+            {t("onboarding.skip")}
+          </button>
+        )}
       </div>
       <div className="h-1 rounded-full bg-subtle overflow-hidden mb-4">
         <div
@@ -45,17 +50,24 @@ export function OnboardingBlock({
       </div>
       <h2 className="m-0 text-[17px] font-semibold tracking-tight text-ink">{t(step.titleKey)}</h2>
       <p className="mt-2 mb-0 text-[14px] text-ink-soft leading-[1.55]">{t(step.bodyKey)}</p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          variant="primary"
-          size="md"
-          disabled={busy}
-          onClick={onAction}
-          icon={busy ? <LoaderCircle size={15} className="wv-spin" /> : undefined}
-        >
-          {busy ? t("onboarding.working") : t(step.ctaKey)}
-        </Button>
-      </div>
+      {waiting ? (
+        <p className="mt-4 mb-0 flex items-center gap-2 text-[13px] text-ink-soft">
+          <LoaderCircle size={15} className="wv-spin shrink-0 text-accent" />
+          {t("onboarding.analysing")}
+        </p>
+      ) : (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="md"
+            disabled={busy}
+            onClick={onAction}
+            icon={busy ? <LoaderCircle size={15} className="wv-spin" /> : undefined}
+          >
+            {busy ? t("onboarding.working") : t(step.ctaKey)}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

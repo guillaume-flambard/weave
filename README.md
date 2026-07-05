@@ -75,6 +75,8 @@ Puis, dans le dashboard : **Reset** → **Rejouer l'activité** → regarde la s
 
 ## API
 
+Documentation complète : **[docs/api/README.md](docs/api/README.md)** · Spec **[OpenAPI 3.1](docs/api/openapi.yaml)**
+
 ### Auth & CORS (durcissement minimal)
 
 L'API supporte désormais un mode de protection léger pour les environnements non purement locaux.

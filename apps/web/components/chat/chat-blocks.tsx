@@ -498,7 +498,8 @@ export function ChatBlockView({ block, chat }: { block: ChatBlock; chat: WeaveCh
         step={step}
         stepIndex={stepIndex}
         stepCount={onboarding.stepCount}
-        busy={busy || onboarding.awaitingSimulate}
+        busy={busy}
+        waiting={onboarding.awaitingSimulate && step.id === "simulate"}
         onAction={handleOnboardingAction}
         onSkip={handleOnboardingSkip}
       />
