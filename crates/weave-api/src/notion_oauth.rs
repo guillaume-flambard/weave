@@ -80,7 +80,9 @@ pub struct CallbackQuery {
 /// Redirect the browser to Notion's consent screen with a signed CSRF state.
 pub async fn authorize(State(state): State<AppState>) -> Response {
     let Some(cfg) = NotionConfig::from_env() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "notion oauth not configured").into_response();
+        // Not configured (e.g. connected via static token): bounce back to the UI
+        // with an error flash instead of a dead-end page.
+        return web_redirect("connect_error=notion");
     };
     let _ = state; // uniform handler signature
     let csrf = sign_state(&cfg.client_secret, chrono::Utc::now().timestamp());

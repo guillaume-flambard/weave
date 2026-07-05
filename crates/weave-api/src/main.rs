@@ -659,7 +659,7 @@ async fn get_agents(
 /// Non-sensitive list of stored connections, so the UI can show real connect state.
 async fn get_connections(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
     let conns = state.store.list_connections().await?;
-    let out: Vec<Value> = conns
+    let mut out: Vec<Value> = conns
         .iter()
         .map(|c| {
             json!({
@@ -671,6 +671,13 @@ async fn get_connections(State(state): State<AppState>) -> Result<Json<Value>, A
             })
         })
         .collect();
+    // Reflect static-token connections (e.g. a Notion internal integration) so the
+    // UI shows them connected instead of offering a Connect button that dead-ends.
+    let has = |p: &str| conns.iter().any(|c| c.provider == p);
+    let token_set = |k: &str| std::env::var(k).ok().is_some_and(|v| !v.trim().is_empty());
+    if !has("notion") && token_set("NOTION_TOKEN") {
+        out.push(json!({ "provider": "notion", "team_id": "token", "scopes": "", "expires_at": null, "updated_at": null }));
+    }
     Ok(Json(json!(out)))
 }
 

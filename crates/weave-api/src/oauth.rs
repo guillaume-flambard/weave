@@ -138,7 +138,7 @@ pub struct CallbackQuery {
 /// Redirect the browser to Slack's consent screen with a signed CSRF state.
 pub async fn authorize(State(state): State<AppState>) -> Response {
     let Some(cfg) = SlackConfig::from_env() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "slack oauth not configured").into_response();
+        return web_redirect("connect_error=slack");
     };
     let _ = state; // AppState kept for a uniform handler signature
     let csrf = sign_state(&cfg.signing_secret, Utc::now().timestamp());
