@@ -50,6 +50,16 @@ const BASE_CONNECTORS: BaseConnector[] = [
     things: ["Espace Data", "Espace Produit", "Espace Growth"],
   },
   {
+    id: "discord",
+    name: "Discord",
+    role: "Questions & réponses des salons d'équipe",
+    items: "",
+    lastSync: "",
+    itemsLabel: "Salons à lire",
+    team: "tech",
+    things: ["#general", "#tech", "#web-general"],
+  },
+  {
     id: "github",
     name: "GitHub",
     role: "Pull requests, issues, revues de code",
@@ -101,6 +111,7 @@ const PENNYLANE_PROFILE: OrgProfile = {
   tiers: {
     slack: "primary",
     notion: "primary",
+    discord: "primary",
     github: "secondary",
     gdocs: "secondary",
     linear: "secondary",
@@ -109,6 +120,7 @@ const PENNYLANE_PROFILE: OrgProfile = {
   status: {
     slack: "connected",
     notion: "connected",
+    discord: "disconnected",
     github: "disconnected",
     gdocs: "disconnected",
     linear: "disconnected",
@@ -120,6 +132,7 @@ const ACME_PROFILE: OrgProfile = {
   tiers: {
     slack: "primary",
     notion: "primary",
+    discord: "primary",
     github: "secondary",
     gdocs: "secondary",
     linear: "secondary",
@@ -128,6 +141,7 @@ const ACME_PROFILE: OrgProfile = {
   status: {
     slack: "connected",
     notion: "connected",
+    discord: "disconnected",
     github: "error",
     gdocs: "disconnected",
     linear: "disconnected",
