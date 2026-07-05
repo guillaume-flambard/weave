@@ -1045,6 +1045,14 @@ mod tests {
             Ok(weave_llm::normalize_theme(&weave_llm::heuristic_theme(trigger)))
         }
 
+        async fn canonicalize_topic(
+            &self,
+            raw_topic: &str,
+            _existing: &[String],
+        ) -> anyhow::Result<String> {
+            Ok(weave_llm::normalize_theme(raw_topic))
+        }
+
         async fn synthesize_agent(
             &self,
             team: &str,

@@ -141,6 +141,38 @@ pub(crate) fn theme_from_response(js: &str, trigger: &str) -> String {
     }
 }
 
+/// Shared (system, user) prompt for topic canonicalization with a controlled vocabulary.
+pub(crate) fn canonicalize_prompt(raw_topic: &str, existing: &[String]) -> (String, String) {
+    let existing_list = if existing.is_empty() {
+        "(aucun pour l'instant)".to_string()
+    } else {
+        existing.join(", ")
+    };
+    let system = "Tu normalises le sujet d'un message d'équipe en un sujet canonique. \
+        Réutilise EXACTEMENT un sujet existant s'il désigne la même chose, sinon propose \
+        un sujet canonique COURT et réutilisable (2 à 5 mots). Réponds en JSON strict: \
+        {\"topic\": \"...\"}. Minuscules, sans ponctuation."
+        .to_string();
+    let user = format!("Sujets existants: {existing_list}\nSujet du message: {raw_topic}");
+    (system, user)
+}
+
+/// Parse + normalize a `{"topic": ...}` response; fall back to the normalized raw topic.
+pub(crate) fn canonical_from_response(js: &str, raw_topic: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct T {
+        #[serde(default)]
+        topic: String,
+    }
+    let topic = parse_json_lenient::<T>(js).map(|t| t.topic).unwrap_or_default();
+    let norm = normalize_theme(&topic);
+    if norm.is_empty() {
+        normalize_theme(raw_topic)
+    } else {
+        norm
+    }
+}
+
 /// Shared (system, user) prompt for agent synthesis.
 pub(crate) fn agent_prompt(team: &str, theme: &str, skills: &[SkillBrief]) -> (String, String) {
     let list = skills
@@ -215,6 +247,16 @@ pub trait LlmGateway: Send + Sync {
         &self,
         trigger: &str,
         body: &str,
+        existing: &[String],
+    ) -> anyhow::Result<String>;
+
+    /// Map a message's raw (LLM-extracted) topic to a stable canonical topic for
+    /// the project. `existing` lists the project's current canonical topics so
+    /// rewordings collapse onto one (controlled vocabulary), giving pattern
+    /// detection a stable anchor. The returned topic is normalized.
+    async fn canonicalize_topic(
+        &self,
+        raw_topic: &str,
         existing: &[String],
     ) -> anyhow::Result<String>;
 
