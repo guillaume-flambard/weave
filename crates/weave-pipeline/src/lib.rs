@@ -251,6 +251,14 @@ impl Runtime {
         }
 
         // Facts.
+        // Canonicalization vocabulary is fetched once per event (not per fact) —
+        // it's a full-table aggregate and every fact in this event shares the
+        // same project, so re-fetching inside the loop was a redundant N+1.
+        let canonical_vocab = self
+            .store
+            .distinct_canonical_topics(&event.project, 50)
+            .await
+            .unwrap_or_default();
         for ef in &extraction.facts {
             let mut ftype = FactType::from_str_lossy(&ef.ftype);
             // Source-grounded correction: a reply in a thread is an answer, even
@@ -272,17 +280,11 @@ impl Runtime {
             // rewordings collapse onto one signature.
             let canonical_topic = match event.payload.get("topic").and_then(|v| v.as_str()) {
                 Some(t) => t.to_string(),
-                None => {
-                    let vocab = self
-                        .store
-                        .distinct_canonical_topics(&event.project, 50)
-                        .await
-                        .unwrap_or_default();
-                    self.llm
-                        .canonicalize_topic(&topic, &vocab)
-                        .await
-                        .unwrap_or_else(|_| weave_llm::normalize_theme(&topic))
-                }
+                None => self
+                    .llm
+                    .canonicalize_topic(&topic, &canonical_vocab)
+                    .await
+                    .unwrap_or_else(|_| weave_llm::normalize_theme(&topic)),
             };
             let fact = Fact {
                 id: Uuid::new_v4(),
@@ -924,6 +926,49 @@ mod tests {
         assert!(!skills.is_empty(), "a skill should emerge from recurring free-text");
         let agents = store.agents(&project).await.unwrap();
         assert!(!agents.is_empty(), "a team-less themed skill should seed an org-level agent");
+    }
+
+    #[tokio::test]
+    async fn payload_topic_events_still_emerge_skill() {
+        let Some(store) = test_store().await else {
+            eprintln!("skipping pipeline test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+        let rt = Runtime::new(
+            store.clone(),
+            Arc::new(weave_llm::HeuristicLlm),
+            Arc::new(ZeroEmbedder),
+            3, // WEAVE_SKILL_THRESHOLD equivalent
+        );
+        let project = format!("canon-seed-{}", uuid::Uuid::new_v4());
+        // All events carry the SAME hardcoded payload "topic" (hard-override
+        // anchor), but different free text — proving the override path bypasses
+        // canonicalization entirely and still clusters/emerges a skill.
+        let topic = "relancer la synchro bancaire";
+        let msgs = [
+            "comment relancer la synchro bancaire d'un client",
+            "comment on force une resynchro bancaire",
+            "je relance la synchro banque comment",
+            "resynchro bancaire staging, le runbook",
+        ];
+        for (i, text) in msgs.iter().enumerate() {
+            let ev = Event {
+                id: uuid::Uuid::new_v4(),
+                source: "discord".into(),
+                ts: chrono::Utc::now(),
+                actor: format!("user{i}"),
+                project: project.clone(),
+                kind: "message".into(),
+                payload: serde_json::json!({ "text": text, "topic": topic }),
+                confidence: 1.0,
+            };
+            rt.ingest(&ev).await.unwrap();
+        }
+        let skills = store.skills(&project).await.unwrap();
+        assert!(
+            !skills.is_empty(),
+            "a skill should emerge via the payload-topic hard-override anchor"
+        );
     }
 }
 
