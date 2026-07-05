@@ -40,6 +40,9 @@ pub trait FactStore: Send + Sync {
         query: &str,
         limit: i64,
     ) -> anyhow::Result<Vec<ScoredFact>>;
+    /// The project's canonical topics, most frequent first (bounds the
+    /// canonicalization prompt vocabulary). Empty topics excluded.
+    async fn distinct_canonical_topics(&self, project: &str, limit: i64) -> anyhow::Result<Vec<String>>;
 }
 
 /// The knowledge graph.

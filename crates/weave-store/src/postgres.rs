@@ -256,6 +256,10 @@ impl FactStore for PgStore {
             })
             .collect())
     }
+
+    async fn distinct_canonical_topics(&self, project: &str, limit: i64) -> anyhow::Result<Vec<String>> {
+        PgStore::distinct_canonical_topics(self, project, limit).await
+    }
 }
 
 #[async_trait]
