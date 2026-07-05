@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  Bot, Brain, Building2, Check, GitBranch, Loader2, MessagesSquare, NotebookText, Plug,
+  Bot, Brain, Building2, Check, GitBranch, Loader2, MessageCircle, MessagesSquare, NotebookText, Plug,
   RefreshCw, Shield, Sparkles, Zap,
 } from "lucide-react";
 import { Button, Badge, StatusIndicator } from "../ui/primitives";
 import { AnswerBlock, Card, ProgressBar } from "../ui/workspace-ui";
 import { ApiFeedRow } from "../workspace/api-feed-row";
-import { authorizeUrl, disconnectProvider, fetchConnections, ingestNotion, ingestSlack } from "../../lib/api";
+import { authorizeUrl, disconnectProvider, fetchConnections, ingestDiscord, ingestNotion, ingestSlack } from "../../lib/api";
 import {
   defaultConnectorStatus,
   primaryConnectors,
@@ -29,6 +29,7 @@ function ConnectorIcon({ id }: { id: string }) {
   const p = { size: 16 as const, strokeWidth: 2 as const };
   if (id === "slack") return <MessagesSquare {...p} />;
   if (id === "notion") return <NotebookText {...p} />;
+  if (id === "discord") return <MessageCircle {...p} />;
   if (id === "github") return <GitBranch {...p} />;
   return <Plug {...p} />;
 }
@@ -46,7 +47,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const [loaded, setLoaded] = useState(false);
   // Per-provider result line after a sync ("12 éléments lus" / "À jour").
   const [synced, setSynced] = useState<Record<string, string>>({});
-  const OAUTH = new Set(["slack", "notion"]);
+  const OAUTH = new Set(["slack", "notion", "discord"]);
   // Post-redirect flash from ?connected / ?connect_error.
   const [flash, setFlash] = useState<{ tone: "ok" | "err"; provider: string } | null>(null);
 
@@ -99,7 +100,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
 
   // Connect → full-page OAuth redirect to the backend (→ provider consent).
   const connect = (id: string) => {
-    if (id !== "slack" && id !== "notion") return;
+    if (id !== "slack" && id !== "notion" && id !== "discord") return;
     setBusy(id);
     window.location.href = authorizeUrl(id);
   };
@@ -128,7 +129,9 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const sync = async (id: string) => {
     setBusy(id);
     try {
-      const res = id === "slack" ? await ingestSlack(orgId) : await ingestNotion(orgId);
+      const res = id === "slack" ? await ingestSlack(orgId)
+        : id === "discord" ? await ingestDiscord(orgId)
+        : await ingestNotion(orgId);
       const n = (res as { ingested?: number; events?: number }).ingested
         ?? (res as { events?: number }).events ?? 0;
       setSynced((s) => ({

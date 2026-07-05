@@ -19,7 +19,7 @@ use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use weave_ingest::{
     generate_events, preset_by_org, presets, scope_from_ids, seed_events, notion_seed_events,
-    Connector, NotionConnector, SlackConnector,
+    Connector, DiscordConnector, NotionConnector, SlackConnector,
 };
 use weave_llm::{
     ClaudeLlm, EmbeddingGateway, HashEmbedder, HeuristicLlm, LlmGateway, OllamaEmbedder, OllamaLlm,
@@ -28,6 +28,7 @@ use weave_llm::{
 use weave_pipeline::{PipelineEvent, Runtime};
 use weave_store::{PgStore, Store};
 
+mod discord_oauth;
 mod notion_oauth;
 mod oauth;
 
@@ -188,6 +189,9 @@ fn build_app(state: AppState) -> Router {
         .route("/connections/slack/import", post(oauth::import_from_env))
         .route("/oauth/notion/authorize", get(notion_oauth::authorize))
         .route("/oauth/notion/callback", get(notion_oauth::callback))
+        .route("/ingest/discord", post(ingest_discord))
+        .route("/oauth/discord/authorize", get(discord_oauth::authorize))
+        .route("/oauth/discord/callback", get(discord_oauth::callback))
         .layer(cors_layer())
         .with_state(state)
 }
@@ -542,6 +546,52 @@ async fn ingest_slack(
         tracing::info!("slack ingest complete ({n} events)");
     });
     Ok(Json(json!({ "status": "ingesting", "source": "slack", "events": n, "project": project })))
+}
+
+/// Pull a Discord guild (read-only) and ingest it through the same pipeline.
+/// The stored connection records the installed guild id in `team_id`; reads
+/// always use the global bot token from env (never the token on the row).
+async fn ingest_discord(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ProjectQ>,
+) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
+    let project = project_of(&q);
+
+    let Some(conn) = state.store.get_active_connection(&state.cipher, "discord").await? else {
+        return Ok(Json(json!({
+            "status": "not_configured",
+            "hint": "connect Discord via /oauth/discord/authorize (installs the bot into your guild)"
+        })));
+    };
+    let Some(cfg) = discord_oauth::DiscordConfig::from_env() else {
+        return Ok(Json(json!({
+            "status": "not_configured",
+            "hint": "DISCORD_BOT_TOKEN / DISCORD_CLIENT_ID not set on the API"
+        })));
+    };
+
+    let guild_id = conn.team_id;
+    let max_channels = std::env::var("DISCORD_MAX_CHANNELS").ok().and_then(|v| v.parse().ok()).unwrap_or(15);
+    let max_messages = std::env::var("DISCORD_MAX_MESSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+
+    tracing::info!(project = %project, source = "discord", guild = %guild_id, "discord ingest requested");
+    let events = DiscordConnector::for_guild(cfg.bot_token, guild_id, &project, max_channels, max_messages)
+        .poll_all()
+        .await?;
+
+    let n = events.len();
+    let runtime = state.runtime.clone();
+    tokio::spawn(async move {
+        for event in events {
+            if let Err(e) = runtime.ingest(&event).await {
+                tracing::error!("discord ingest failed: {e}");
+            }
+        }
+        tracing::info!("discord ingest complete ({n} events)");
+    });
+    Ok(Json(json!({ "status": "ingesting", "source": "discord", "events": n, "project": project })))
 }
 
 /// Ingest a real Notion workspace when NOTION_TOKEN is set; otherwise replay the
@@ -1205,6 +1255,27 @@ mod tests {
         assert_eq!(v["source"], "notion");
         assert_eq!(v["status"], "ingesting");
         assert_eq!(v["events"], weave_ingest::notion_seed_events().len());
+    }
+
+    #[tokio::test]
+    async fn ingest_discord_without_connection_is_not_configured() {
+        let Some(app) = test_app().await else {
+            eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/ingest/discord")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["status"], "not_configured");
     }
 
     #[tokio::test]

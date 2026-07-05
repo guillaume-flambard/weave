@@ -42,6 +42,10 @@ services:
       NOTION_REDIRECT_URI: https://strayeye.com/weave-api/oauth/notion/callback
       NOTION_TOKEN: ${NOTION_TOKEN:-}
       NOTION_PARENT_PAGE_ID: ${NOTION_PARENT_PAGE_ID:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-https://strayeye.com/weave-api/oauth/discord/callback}
       WEAVE_LLM_PROVIDER: ${WEAVE_LLM_PROVIDER:-heuristic}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}

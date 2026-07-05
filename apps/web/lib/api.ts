@@ -144,6 +144,11 @@ export function ingestNotion(project?: string) {
   return fetchJson<{ ingested?: number; events?: number; message?: string }>(`${API}/ingest/notion${q}`, { method: "POST" });
 }
 
+export function ingestDiscord(project?: string) {
+  const q = project ? `?project=${encodeURIComponent(project)}` : "";
+  return fetchJson<{ ingested?: number; events?: number; message?: string }>(`${API}/ingest/discord${q}`, { method: "POST" });
+}
+
 export type ConnectionStatus = {
   provider: string;
   team_id: string;
@@ -158,7 +163,7 @@ export function fetchConnections() {
 }
 
 /** Full-page OAuth entrypoint. The browser navigates here; backend 302s to the provider. */
-export function authorizeUrl(provider: "slack" | "notion") {
+export function authorizeUrl(provider: "slack" | "notion" | "discord") {
   return `${API}/oauth/${provider}/authorize`;
 }
 
