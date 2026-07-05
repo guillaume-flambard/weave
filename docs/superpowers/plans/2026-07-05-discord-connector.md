@@ -753,7 +753,7 @@ In the env template, beside the `SLACK_*` / `NOTION_*` block:
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 DISCORD_BOT_TOKEN=
-DISCORD_REDIRECT_URI=https://strayeye.com/api/oauth/discord/callback
+DISCORD_REDIRECT_URI=https://strayeye.com/weave-api/oauth/discord/callback
 # Optional: DISCORD_API_BASE, DISCORD_MAX_CHANNELS, DISCORD_MAX_MESSAGES
 ```
 
@@ -778,7 +778,7 @@ git commit -m "chore(discord): env template + prod compose wiring"
 - [ ] **Step 5: Manual rollout (documented, not automated)**
 
 1. Discord Developer Portal → New Application "Weave" → Bot → **enable Message Content Intent**.
-2. OAuth2 → add redirect `https://strayeye.com/api/oauth/discord/callback`.
+2. OAuth2 → add redirect `https://strayeye.com/weave-api/oauth/discord/callback`.
 3. Copy client id/secret + bot token → set env on Forge (`ovh-echo`), redeploy the api container.
 4. In the Weave web app → Sources → **Connect Discord** → pick Blue Owl → authorize.
 5. **Sync** → confirm `events > 0` and that facts/skills appear.

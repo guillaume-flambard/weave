@@ -48,11 +48,14 @@ pub fn parse_messages(resp: &serde_json::Value, channel: &str, project: &str) ->
             continue;
         }
         let actor = m["author"]["username"].as_str().unwrap_or("unknown").to_string();
-        let ts = m["timestamp"]
+        let Some(ts) = m["timestamp"]
             .as_str()
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|d| d.with_timezone(&Utc))
-            .unwrap_or_else(Utc::now);
+        else {
+            tracing::warn!("discord channel {channel}: message with missing/malformed timestamp skipped");
+            continue;
+        };
         out.push(Event {
             id: Uuid::new_v4(),
             source: "discord".into(),
@@ -166,6 +169,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_messages_drops_malformed_timestamp() {
+        let resp = serde_json::json!([
+            { "content": "newer", "author": { "username": "pylon", "bot": false }, "timestamp": "2026-07-05T10:11:00.000000+00:00" },
+            { "content": "garbage ts", "author": { "username": "zoanlogia", "bot": false }, "timestamp": "not-a-date" },
+            { "content": "older", "author": { "username": "sarah", "bot": false }, "timestamp": "2026-07-05T10:08:00.000000+00:00" }
+        ]);
+        let events = parse_messages(&resp, "web-general", "blueowl");
+        assert_eq!(events.len(), 2); // garbage-timestamp message dropped
+        assert!(events.iter().all(|e| e.text() != "garbage ts"));
+        // remaining events still ordered oldest-first
+        assert_eq!(events[0].actor, "sarah");
+        assert!(events[0].text().contains("older"));
+        assert_eq!(events[1].actor, "pylon");
+        assert!(events[1].text().contains("newer"));
+    }
+
+    #[test]
     fn parse_text_channel_ids_keeps_only_text() {
         let resp = serde_json::json!([
             { "id": "C1", "type": 0 },
@@ -210,5 +230,35 @@ mod tests {
         let events = c.poll_all().await.unwrap();
         assert_eq!(events.len(), 1); // C1 only; C2 skipped, V1 filtered out
         assert!(events[0].text().contains("synchro"));
+    }
+
+    #[tokio::test]
+    async fn poll_all_uses_bot_token_header_not_oauth() {
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        // Both mocks only match when the exact bot-token header is present, proving
+        // the connector authenticates reads with the env bot token, not an OAuth token.
+        Mock::given(method("GET"))
+            .and(path("/guilds/G1/channels"))
+            .and(header("authorization", "Bot testtoken"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([{ "id": "C1", "type": 0 }])),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/channels/C1/messages"))
+            .and(header("authorization", "Bot testtoken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "content": "hi", "author": { "username": "u", "bot": false }, "timestamp": "2026-07-05T10:00:00.000000+00:00" }
+            ])))
+            .mount(&server)
+            .await;
+
+        let c = DiscordConnector::for_guild("testtoken", "G1", "blueowl", 15, 50).with_base(server.uri());
+        let events = c.poll_all().await.unwrap();
+        assert_eq!(events.len(), 1);
     }
 }
