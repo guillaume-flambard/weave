@@ -181,6 +181,7 @@ fn build_app(state: AppState) -> Router {
         .route("/agents/run", post(run_agent))
         .route("/mcp", post(mcp))
         .route("/connections", get(get_connections))
+        .route("/connections/{provider}", axum::routing::delete(disconnect_provider))
         .route("/oauth/slack/authorize", get(oauth::authorize))
         .route("/oauth/slack/callback", get(oauth::callback))
         .route("/connections/slack/import", post(oauth::import_from_env))
@@ -663,6 +664,17 @@ async fn get_agents(
     use weave_store::AgentStore;
     let agents = state.store.agents(&project_of(&q)).await?;
     Ok(Json(json!(agents)))
+}
+
+/// Disconnect a provider: remove its stored connection(s) so the user can
+/// reconnect (e.g. to re-grant scopes). Static-token providers stay reflected
+/// via env, so this only clears OAuth-stored rows.
+async fn disconnect_provider(
+    State(state): State<AppState>,
+    axum::extract::Path(provider): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let removed = state.store.delete_connections(&provider).await?;
+    Ok(Json(json!({ "status": "disconnected", "provider": provider, "removed": removed })))
 }
 
 /// Non-sensitive list of stored connections, so the UI can show real connect state.

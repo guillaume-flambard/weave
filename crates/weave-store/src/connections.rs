@@ -125,6 +125,15 @@ impl PgStore {
             })
             .collect())
     }
+
+    /// Delete all stored connections for a provider. Returns the number removed.
+    pub async fn delete_connections(&self, provider: &str) -> anyhow::Result<u64> {
+        let res = sqlx::query("DELETE FROM connections WHERE provider = $1")
+            .bind(provider)
+            .execute(self.pool())
+            .await?;
+        Ok(res.rows_affected())
+    }
 }
 
 #[cfg(test)]

@@ -382,6 +382,7 @@ export const messages = {
     connectedBadge: "Connecté",
     reconnectBadge: "Reconnexion requise",
     sync: "Synchroniser",
+    disconnect: "Déconnecter",
     syncing: "Synchro…",
     checking: "Vérification…",
     syncedCount: "{n} éléments lus",

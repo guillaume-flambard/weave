@@ -162,3 +162,8 @@ export function authorizeUrl(provider: "slack" | "notion") {
   return `${API}/oauth/${provider}/authorize`;
 }
 
+/** Remove a provider's stored connection so the user can reconnect (re-grant scopes). */
+export function disconnectProvider(provider: string) {
+  return fetchJson<{ status: string; removed: number }>(`${API}/connections/${provider}`, { method: "DELETE" });
+}
+

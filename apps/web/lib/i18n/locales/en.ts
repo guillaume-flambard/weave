@@ -377,6 +377,7 @@ export const messages = {
     connectedBadge: "Connected",
     reconnectBadge: "Reconnection required",
     sync: "Sync",
+    disconnect: "Disconnect",
     syncing: "Syncing…",
     checking: "Checking…",
     syncedCount: "{n} items read",

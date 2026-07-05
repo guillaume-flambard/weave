@@ -9,7 +9,7 @@ import {
 import { Button, Badge, StatusIndicator } from "../ui/primitives";
 import { AnswerBlock, Card, ProgressBar } from "../ui/workspace-ui";
 import { ApiFeedRow } from "../workspace/api-feed-row";
-import { authorizeUrl, fetchConnections, ingestNotion, ingestSlack } from "../../lib/api";
+import { authorizeUrl, disconnectProvider, fetchConnections, ingestNotion, ingestSlack } from "../../lib/api";
 import {
   defaultConnectorStatus,
   primaryConnectors,
@@ -104,6 +104,26 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     window.location.href = authorizeUrl(id);
   };
 
+  // Disconnect: drop the stored connection so the user can reconnect (re-grant scopes).
+  const disconnect = async (id: string) => {
+    setBusy(id);
+    try {
+      await disconnectProvider(id);
+      setLive((s) => {
+        const n = new Set(s ?? []);
+        n.delete(id);
+        return n;
+      });
+      setSynced((s) => {
+        const n = { ...s };
+        delete n[id];
+        return n;
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   // Sync pulls content from the stored connection and reports what it read.
   const sync = async (id: string) => {
     setBusy(id);
@@ -165,13 +185,18 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
             {working ? <Loader2 size={13} className="animate-spin" /> : t("chat.connect")}
           </Button>
         ) : connected && connectable ? (
-          <Button variant="secondary" size="sm" disabled={working} onClick={() => sync(c.id)}>
-            {working ? (
-              <><Loader2 size={13} className="animate-spin" /> {t("sources.syncing")}</>
-            ) : (
-              <><RefreshCw size={13} /> {t("sources.sync")}</>
-            )}
-          </Button>
+          <div className="flex items-center gap-1.5 self-center">
+            <Button variant="secondary" size="sm" disabled={working} onClick={() => sync(c.id)}>
+              {working ? (
+                <><Loader2 size={13} className="animate-spin" /> {t("sources.syncing")}</>
+              ) : (
+                <><RefreshCw size={13} /> {t("sources.sync")}</>
+              )}
+            </Button>
+            <Button variant="ghost" size="sm" disabled={working} onClick={() => disconnect(c.id)}>
+              {t("sources.disconnect")}
+            </Button>
+          </div>
         ) : null}
       </div>
     );
