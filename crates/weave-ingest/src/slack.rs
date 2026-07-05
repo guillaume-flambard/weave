@@ -89,11 +89,14 @@ impl SlackConnector {
 
     /// Discover the channels the connected user is a member of (capped).
     pub async fn discover_channels(&self) -> anyhow::Result<Vec<String>> {
+        // Public channels only: needs just `channels:read`. Private channels would
+        // additionally require `groups:read`, which we don't request (avoids a
+        // missing_scope error and an extra consent).
         let v = self
             .get(
                 "users.conversations",
                 &[
-                    ("types", "public_channel,private_channel"),
+                    ("types", "public_channel"),
                     ("exclude_archived", "true"),
                     ("limit", "200"),
                 ],
