@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libs
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY migrations ./migrations
+COPY docs ./docs
 RUN cargo build --release -p weave-api
 
 FROM debian:bookworm-slim
