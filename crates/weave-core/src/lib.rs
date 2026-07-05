@@ -137,6 +137,10 @@ pub struct Fact {
     /// Deterministic dedup signature over (topic, content); duplicates are dropped.
     #[serde(default)]
     pub content_sig: String,
+    /// Stable canonical topic (LLM-canonicalized at ingest); the pattern
+    /// signature anchor. Empty when not computed.
+    #[serde(default)]
+    pub canonical_topic: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
     pub created_at: DateTime<Utc>,

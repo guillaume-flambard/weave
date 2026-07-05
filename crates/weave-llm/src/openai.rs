@@ -139,6 +139,21 @@ impl LlmGateway for OpenaiLlm {
         }
     }
 
+    async fn canonicalize_topic(
+        &self,
+        raw_topic: &str,
+        existing: &[String],
+    ) -> anyhow::Result<String> {
+        let (system, user) = crate::canonicalize_prompt(raw_topic, existing);
+        match self.chat(&system, &user, true).await {
+            Ok(js) => Ok(crate::canonical_from_response(&js, raw_topic)),
+            Err(e) => {
+                tracing::warn!("canonicalize_topic failed ({e}); using heuristic");
+                self.fallback.canonicalize_topic(raw_topic, existing).await
+            }
+        }
+    }
+
     async fn synthesize_agent(
         &self,
         team: &str,

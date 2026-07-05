@@ -251,6 +251,14 @@ impl Runtime {
         }
 
         // Facts.
+        // Canonicalization vocabulary is fetched once per event (not per fact) —
+        // it's a full-table aggregate and every fact in this event shares the
+        // same project, so re-fetching inside the loop was a redundant N+1.
+        let canonical_vocab = self
+            .store
+            .distinct_canonical_topics(&event.project, 50)
+            .await
+            .unwrap_or_default();
         for ef in &extraction.facts {
             let mut ftype = FactType::from_str_lossy(&ef.ftype);
             // Source-grounded correction: a reply in a thread is an answer, even
@@ -267,6 +275,17 @@ impl Runtime {
             }
             let content_sig = weave_core::fact_dedup_key(&topic, &content);
             let embedding = self.embedder.embed(&format!("{topic} {content}")).await?;
+            // Stable clustering anchor: payload topic is a hard override (seed/thread);
+            // otherwise canonicalize the LLM topic against the project's vocabulary so
+            // rewordings collapse onto one signature.
+            let canonical_topic = match event.payload.get("topic").and_then(|v| v.as_str()) {
+                Some(t) => t.to_string(),
+                None => self
+                    .llm
+                    .canonicalize_topic(&topic, &canonical_vocab)
+                    .await
+                    .unwrap_or_else(|_| weave_llm::normalize_theme(&topic)),
+            };
             let fact = Fact {
                 id: Uuid::new_v4(),
                 event_id: Some(event.id),
@@ -280,6 +299,7 @@ impl Runtime {
                 confidence: ef.confidence,
                 memory_level: infer_memory_level(event, ftype),
                 content_sig,
+                canonical_topic,
                 embedding: Some(embedding),
                 created_at: Utc::now(),
             };
@@ -303,7 +323,10 @@ impl Runtime {
             // thread_ts or PR number), or when it's a Q/A. This makes emergence
             // robust to how any given LLM labels the fact type.
             let tracked_thread = event.payload.get("topic").is_some();
-            if tracked_thread || matches!(ftype, FactType::Question | FactType::Answer) {
+            if tracked_thread
+                || !fact.canonical_topic.is_empty()
+                || matches!(ftype, FactType::Question | FactType::Answer)
+            {
                 self.detect_pattern_and_maybe_emerge(event, &fact).await?;
             }
         }
@@ -346,7 +369,7 @@ impl Runtime {
             .payload
             .get("topic")
             .and_then(|v| v.as_str())
-            .unwrap_or(&fact.topic);
+            .unwrap_or(&fact.canonical_topic); // was: &fact.topic
         let base_sig = normalize_signature(hint);
         if base_sig.is_empty() {
             return Ok(());
@@ -525,8 +548,8 @@ impl Runtime {
 
         let mut by: HashMap<(String, String), Vec<&Skill>> = HashMap::new();
         for s in &skills {
-            if s.team.is_empty() || s.theme.trim().is_empty() {
-                continue; // org-level or un-themed skills don't seed a specialist
+            if s.theme.trim().is_empty() {
+                continue; // un-themed skills can't name a specialist
             }
             by.entry((s.team.clone(), s.theme.clone())).or_default().push(s);
         }
@@ -833,6 +856,8 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::cosine;
+    use super::*;
+    use weave_store::{AgentStore, SkillStore};
 
     #[test]
     fn cosine_scores_similarity() {
@@ -842,6 +867,108 @@ mod tests {
         assert!((cosine(&[1.0, 0.0], &[-1.0, 0.0]) + 1.0).abs() < 1e-6);
         // Zero vector is safe (no NaN).
         assert_eq!(cosine(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
+
+    struct ZeroEmbedder;
+
+    #[async_trait::async_trait]
+    impl EmbeddingGateway for ZeroEmbedder {
+        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+            Ok(vec![0.0; weave_core::EMBEDDING_DIM])
+        }
+    }
+
+    async fn test_store() -> Option<Arc<weave_store::PgStore>> {
+        let url = std::env::var("TEST_DATABASE_URL").ok()?;
+        let store = Arc::new(weave_store::PgStore::connect(&url).await.ok()?);
+        store.migrate().await.ok()?;
+        Some(store)
+    }
+
+    #[tokio::test]
+    async fn free_text_messages_emerge_skill_and_agent() {
+        let Some(store) = test_store().await else {
+            eprintln!("skipping pipeline test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+        // Named agents need cluster-size 1 for a single team-less theme in this test.
+        std::env::set_var("WEAVE_AGENT_EMERGE_THRESHOLD", "1");
+        let rt = Runtime::new(
+            store.clone(),
+            Arc::new(weave_llm::HeuristicLlm),
+            Arc::new(ZeroEmbedder),
+            3, // WEAVE_SKILL_THRESHOLD equivalent
+        );
+        let project = format!("canon-emerge-{}", uuid::Uuid::new_v4());
+        // Reworded, free-text: NO payload "topic" and NO "team" — like real Discord.
+        // All lead with the shared token "minerva" so the heuristic canonical
+        // topic collapses onto one signature.
+        let msgs = [
+            "minerva plante souvent, comment on relance",
+            "minerva a crashé, comment je relance",
+            "minerva redémarrage impossible, le runbook",
+            "minerva relancer après un crash",
+        ];
+        for (i, text) in msgs.iter().enumerate() {
+            let ev = Event {
+                id: uuid::Uuid::new_v4(),
+                source: "discord".into(),
+                ts: chrono::Utc::now(),
+                actor: format!("user{i}"),
+                project: project.clone(),
+                kind: "message".into(),
+                payload: serde_json::json!({ "text": text, "channel": "général" }),
+                confidence: 1.0,
+            };
+            rt.ingest(&ev).await.unwrap();
+        }
+        let skills = store.skills(&project).await.unwrap();
+        assert!(!skills.is_empty(), "a skill should emerge from recurring free-text");
+        let agents = store.agents(&project).await.unwrap();
+        assert!(!agents.is_empty(), "a team-less themed skill should seed an org-level agent");
+    }
+
+    #[tokio::test]
+    async fn payload_topic_events_still_emerge_skill() {
+        let Some(store) = test_store().await else {
+            eprintln!("skipping pipeline test: TEST_DATABASE_URL not set or unavailable");
+            return;
+        };
+        let rt = Runtime::new(
+            store.clone(),
+            Arc::new(weave_llm::HeuristicLlm),
+            Arc::new(ZeroEmbedder),
+            3, // WEAVE_SKILL_THRESHOLD equivalent
+        );
+        let project = format!("canon-seed-{}", uuid::Uuid::new_v4());
+        // All events carry the SAME hardcoded payload "topic" (hard-override
+        // anchor), but different free text — proving the override path bypasses
+        // canonicalization entirely and still clusters/emerges a skill.
+        let topic = "relancer la synchro bancaire";
+        let msgs = [
+            "comment relancer la synchro bancaire d'un client",
+            "comment on force une resynchro bancaire",
+            "je relance la synchro banque comment",
+            "resynchro bancaire staging, le runbook",
+        ];
+        for (i, text) in msgs.iter().enumerate() {
+            let ev = Event {
+                id: uuid::Uuid::new_v4(),
+                source: "discord".into(),
+                ts: chrono::Utc::now(),
+                actor: format!("user{i}"),
+                project: project.clone(),
+                kind: "message".into(),
+                payload: serde_json::json!({ "text": text, "topic": topic }),
+                confidence: 1.0,
+            };
+            rt.ingest(&ev).await.unwrap();
+        }
+        let skills = store.skills(&project).await.unwrap();
+        assert!(
+            !skills.is_empty(),
+            "a skill should emerge via the payload-topic hard-override anchor"
+        );
     }
 }
 

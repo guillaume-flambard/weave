@@ -172,6 +172,25 @@ impl LlmGateway for HeuristicLlm {
         Ok(fresh)
     }
 
+    async fn canonicalize_topic(
+        &self,
+        raw_topic: &str,
+        existing: &[String],
+    ) -> anyhow::Result<String> {
+        let fresh = crate::normalize_theme(&crate::heuristic_theme(raw_topic));
+        let fresh_tokens: Vec<&str> = fresh.split_whitespace().collect();
+        for e in existing {
+            let en = crate::normalize_theme(e);
+            if en
+                .split_whitespace()
+                .any(|t| t.len() > 2 && fresh_tokens.contains(&t))
+            {
+                return Ok(en);
+            }
+        }
+        Ok(fresh)
+    }
+
     async fn synthesize_agent(
         &self,
         team: &str,
@@ -213,6 +232,28 @@ mod tests {
         let existing = vec!["synchro paiements".to_string()];
         let t = h.assign_theme("relancer la synchro bancaire", "…", &existing).await.unwrap();
         assert_eq!(t, "synchro paiements"); // reused via shared "synchro" token
+    }
+
+    #[tokio::test]
+    async fn canonicalize_topic_reuses_existing_on_shared_token() {
+        let h = HeuristicLlm;
+        // First message defines the canonical topic.
+        let first = h.canonicalize_topic("relancer minerva", &[]).await.unwrap();
+        assert!(!first.is_empty());
+        // A reworded message that shares a salient token collapses to the existing one.
+        let second = h
+            .canonicalize_topic("redémarrer minerva après un crash", &[first.clone()])
+            .await
+            .unwrap();
+        assert_eq!(second, first, "reworded topic should reuse the existing canonical");
+    }
+
+    #[tokio::test]
+    async fn canonicalize_topic_fresh_when_no_overlap() {
+        let h = HeuristicLlm;
+        let t = h.canonicalize_topic("régénérer la clé kimi", &["relancer minerva".into()]).await.unwrap();
+        assert_ne!(t, "relancer minerva");
+        assert_eq!(t, crate::normalize_theme(&t)); // already canonical
     }
 
     #[tokio::test]
