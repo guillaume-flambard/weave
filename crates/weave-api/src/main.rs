@@ -181,7 +181,7 @@ fn build_app(state: AppState) -> Router {
         .route("/agents/run", post(run_agent))
         .route("/mcp", post(mcp))
         .route("/connections", get(get_connections))
-        .route("/connections/{provider}", axum::routing::delete(disconnect_provider))
+        .route("/connections/:provider", axum::routing::delete(disconnect_provider))
         .route("/oauth/slack/authorize", get(oauth::authorize))
         .route("/oauth/slack/callback", get(oauth::callback))
         .route("/connections/slack/import", post(oauth::import_from_env))
