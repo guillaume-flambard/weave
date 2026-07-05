@@ -280,6 +280,7 @@ impl Runtime {
                 confidence: ef.confidence,
                 memory_level: infer_memory_level(event, ftype),
                 content_sig,
+                canonical_topic: String::new(),
                 embedding: Some(embedding),
                 created_at: Utc::now(),
             };

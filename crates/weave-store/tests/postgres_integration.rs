@@ -50,6 +50,7 @@ fn sample_fact(project: &str) -> Fact {
             "relancer synchro bancaire",
             "Utiliser BankSync.rerun(client_id)",
         ),
+        canonical_topic: String::new(),
         embedding: None,
         created_at: Utc::now(),
     }
@@ -206,6 +207,27 @@ async fn skill_uniqueness_pattern_tracking_and_org_config_roundtrip_work() {
     store.save_org_config(&project, &cfg).await.unwrap();
     let roundtrip = store.get_org_config(&project).await.unwrap().unwrap();
     assert_eq!(roundtrip, cfg);
+}
+
+#[tokio::test]
+async fn distinct_canonical_topics_orders_by_frequency() {
+    let Some(store) = test_store().await else {
+        eprintln!("skipping postgres integration test: TEST_DATABASE_URL not set or unavailable");
+        return;
+    };
+
+    let project = unique_project("store-canon");
+    for ct in ["relancer minerva", "relancer minerva", "cle kimi"] {
+        let mut fact = sample_fact(&project);
+        fact.id = Uuid::new_v4();
+        fact.canonical_topic = ct.to_string();
+        fact.content_sig = Uuid::new_v4().to_string();
+        store.insert_fact(&fact).await.unwrap();
+    }
+
+    let topics = store.distinct_canonical_topics(&project, 50).await.unwrap();
+    assert_eq!(topics.first().map(String::as_str), Some("relancer minerva"));
+    assert!(topics.contains(&"cle kimi".to_string()));
 }
 
 #[tokio::test]

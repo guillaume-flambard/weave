@@ -39,6 +39,23 @@ impl PgStore {
         Ok(())
     }
 
+    /// The project's canonical topics, most frequent first (bounds the
+    /// canonicalization prompt vocabulary). Empty topics excluded.
+    pub async fn distinct_canonical_topics(&self, project: &str, limit: i64) -> anyhow::Result<Vec<String>> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT canonical_topic FROM facts
+             WHERE project = $1 AND canonical_topic <> ''
+             GROUP BY canonical_topic
+             ORDER BY count(*) DESC
+             LIMIT $2",
+        )
+        .bind(project)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
     /// Wipe all data for one project so a demo can be replayed from scratch.
     pub async fn reset(&self, project: &str) -> anyhow::Result<()> {
         for table in ["agents", "skills", "patterns", "facts", "relationships", "entities", "events"] {
@@ -79,13 +96,14 @@ fn row_to_fact(row: &PgRow) -> Fact {
         confidence: row.get("confidence"),
         memory_level: MemoryLevel::from_str_lossy(row.get::<String, _>("memory_level").as_str()),
         content_sig: row.try_get("content_sig").unwrap_or_default(),
+        canonical_topic: row.try_get("canonical_topic").unwrap_or_default(),
         embedding: None, // not read back; only used for storage/search
         created_at: row.get::<DateTime<Utc>, _>("created_at"),
     }
 }
 
 const FACT_COLS: &str =
-    "id, event_id, project, team, workstream, ftype, author, topic, content, confidence, memory_level, created_at";
+    "id, event_id, project, team, workstream, ftype, author, topic, content, confidence, memory_level, canonical_topic, created_at";
 
 #[async_trait]
 impl EventStore for PgStore {
@@ -147,8 +165,8 @@ impl FactStore for PgStore {
     async fn insert_fact(&self, fact: &Fact) -> anyhow::Result<bool> {
         let embedding = fact.embedding.as_ref().map(|e| to_pgvector(e));
         let res = sqlx::query(
-            "INSERT INTO facts (id, event_id, project, team, workstream, ftype, author, topic, content, confidence, memory_level, content_sig, embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, $13::vector)
+            "INSERT INTO facts (id, event_id, project, team, workstream, ftype, author, topic, content, confidence, memory_level, content_sig, canonical_topic, embedding)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, $14::vector)
              ON CONFLICT (project, content_sig) WHERE content_sig <> '' DO NOTHING",
         )
         .bind(fact.id)
@@ -163,6 +181,7 @@ impl FactStore for PgStore {
         .bind(fact.confidence)
         .bind(fact.memory_level.as_str())
         .bind(&fact.content_sig)
+        .bind(&fact.canonical_topic)
         .bind(embedding)
         .execute(&self.pool)
         .await?;

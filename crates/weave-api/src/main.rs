@@ -1145,6 +1145,7 @@ mod tests {
             confidence: 0.95,
             memory_level: MemoryLevel::Project,
             content_sig: String::new(),
+            canonical_topic: String::new(),
             embedding: None,
             created_at: chrono::Utc::now(),
         }
