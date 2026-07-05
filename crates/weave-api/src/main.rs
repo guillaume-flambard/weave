@@ -485,16 +485,25 @@ async fn ingest_slack(
         std::env::var("SLACK_BOT_TOKEN").ok().filter(|t| !t.trim().is_empty())
     });
 
-    let (Some(token), Some(channel)) = (token, channel) else {
+    let Some(token) = token else {
         return Ok(Json(json!({
             "status": "not_configured",
-            "hint": "connect Slack (POST /connections/slack/import or /oauth/slack/authorize) and set SLACK_CHANNEL"
+            "hint": "connect Slack via /oauth/slack/authorize (grants a user token to read your channels)"
         })));
     };
 
     tracing::info!(project = %project, source = "slack", "slack ingest requested");
-    let connector = SlackConnector::new(token, channel, &project);
-    let events = connector.poll().await?; // surface auth/permission errors now
+    // A fixed SLACK_CHANNEL overrides discovery (single channel); otherwise the
+    // connected user token drives multi-channel discovery of the user's own channels.
+    let events = if let Some(channel) = channel {
+        SlackConnector::new(token, channel, &project).poll().await?
+    } else {
+        let max_channels = std::env::var("SLACK_MAX_CHANNELS").ok().and_then(|v| v.parse().ok()).unwrap_or(15);
+        let max_messages = std::env::var("SLACK_MAX_MESSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+        SlackConnector::for_user(token, &project, max_channels, max_messages)
+            .poll_all()
+            .await?
+    };
     let n = events.len();
     let runtime = state.runtime.clone();
     tokio::spawn(async move {

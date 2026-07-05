@@ -18,6 +18,21 @@ pub struct SlackConnector {
     channel: String,
     project: String,
     limit: u32,
+    api_base: String,
+    max_channels: usize,
+    max_messages: u32,
+}
+
+/// Pure extractor: channel ids from a `users.conversations` response.
+pub fn parse_channel_ids(resp: &serde_json::Value) -> Vec<String> {
+    resp["channels"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| c["id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl SlackConnector {
@@ -28,13 +43,37 @@ impl SlackConnector {
             channel: channel.into(),
             project: project.into(),
             limit: 200,
+            api_base: "https://slack.com/api".into(),
+            max_channels: 15,
+            max_messages: 50,
         }
+    }
+
+    /// Multi-channel connector: no fixed channel, discovers the user's channels.
+    pub fn for_user(
+        token: impl Into<String>,
+        project: impl Into<String>,
+        max_channels: usize,
+        max_messages: u32,
+    ) -> Self {
+        SlackConnector {
+            channel: String::new(),
+            max_channels,
+            max_messages,
+            ..Self::new(token, "", project)
+        }
+    }
+
+    /// Override the API base (tests point this at a wiremock server).
+    pub fn with_base(mut self, base: impl Into<String>) -> Self {
+        self.api_base = base.into();
+        self
     }
 
     async fn get(&self, method: &str, query: &[(&str, &str)]) -> anyhow::Result<serde_json::Value> {
         let v: serde_json::Value = self
             .client
-            .get(format!("https://slack.com/api/{method}"))
+            .get(format!("{}/{method}", self.api_base))
             .bearer_auth(&self.token)
             .query(query)
             .send()
@@ -46,6 +85,41 @@ impl SlackConnector {
             anyhow::bail!("slack {method} error: {}", v["error"]);
         }
         Ok(v)
+    }
+
+    /// Discover the channels the connected user is a member of (capped).
+    pub async fn discover_channels(&self) -> anyhow::Result<Vec<String>> {
+        let v = self
+            .get(
+                "users.conversations",
+                &[
+                    ("types", "public_channel,private_channel"),
+                    ("exclude_archived", "true"),
+                    ("limit", "200"),
+                ],
+            )
+            .await?;
+        let mut ids = parse_channel_ids(&v);
+        ids.truncate(self.max_channels);
+        Ok(ids)
+    }
+
+    /// Ingest every discovered channel, best-effort (a failing channel is skipped).
+    pub async fn poll_all(&self) -> anyhow::Result<Vec<Event>> {
+        let users = self.user_map().await.unwrap_or_default();
+        let channels = self.discover_channels().await?;
+        let limit = self.max_messages.to_string();
+        let mut events = Vec::new();
+        for ch in channels {
+            match self
+                .get("conversations.history", &[("channel", &ch), ("limit", &limit)])
+                .await
+            {
+                Ok(history) => events.extend(parse_history(&history, &self.project, &users)),
+                Err(e) => tracing::warn!("slack channel {ch} skipped: {e}"),
+            }
+        }
+        Ok(events)
     }
 
     /// Fetch a `user_id -> display name` map so events carry human actors.
@@ -163,5 +237,44 @@ mod tests {
         assert_eq!(events[0].payload["reply_to"], "1700000002.000100");
         assert_eq!(events[1].actor, "sarah");
         assert!(events[1].text().contains("synchro"));
+    }
+
+    #[test]
+    fn parse_channel_ids_extracts_or_empty() {
+        let resp = serde_json::json!({ "ok": true, "channels": [ {"id":"C1"}, {"id":"C2"} ] });
+        assert_eq!(parse_channel_ids(&resp), vec!["C1", "C2"]);
+        assert!(parse_channel_ids(&serde_json::json!({ "channels": [] })).is_empty());
+    }
+
+    #[tokio::test]
+    async fn poll_all_aggregates_channels_best_effort() {
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        // users.list (for actor names) — empty is fine
+        Mock::given(method("GET")).and(path("/users.list"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true, "members": [] })))
+            .mount(&server).await;
+        // discover: two channels
+        Mock::given(method("GET")).and(path("/users.conversations"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "channels": [ {"id":"C1"}, {"id":"C2"} ]
+            })))
+            .mount(&server).await;
+        // C1 has one message
+        Mock::given(method("GET")).and(path("/conversations.history")).and(query_param("channel", "C1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true, "messages": [ {"type":"message","user":"U1","text":"relancer la synchro","ts":"1700000001.0"} ]
+            })))
+            .mount(&server).await;
+        // C2 errors → skipped (best-effort)
+        Mock::given(method("GET")).and(path("/conversations.history")).and(query_param("channel", "C2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": false, "error": "not_in_channel" })))
+            .mount(&server).await;
+
+        let c = SlackConnector::for_user("tok", "pennylane", 15, 50).with_base(server.uri());
+        let events = c.poll_all().await.unwrap();
+        assert_eq!(events.len(), 1); // C1 only; C2 skipped
+        assert!(events[0].text().contains("synchro"));
     }
 }

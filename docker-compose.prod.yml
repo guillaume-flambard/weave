@@ -34,6 +34,9 @@ services:
       SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
       SLACK_REDIRECT_URI: https://strayeye.com/weave-api/oauth/slack/callback
       SLACK_OAUTH_SCOPES: ${SLACK_OAUTH_SCOPES:-}
+      SLACK_USER_SCOPES: ${SLACK_USER_SCOPES:-channels:history,channels:read,groups:history,users:read}
+      SLACK_MAX_CHANNELS: ${SLACK_MAX_CHANNELS:-15}
+      SLACK_MAX_MESSAGES: ${SLACK_MAX_MESSAGES:-50}
       NOTION_CLIENT_ID: ${NOTION_CLIENT_ID:-}
       NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET:-}
       NOTION_REDIRECT_URI: https://strayeye.com/weave-api/oauth/notion/callback

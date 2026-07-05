@@ -61,18 +61,30 @@ pub fn parse_oauth_response(v: &serde_json::Value, now: DateTime<Utc>) -> anyhow
     if v["ok"].as_bool() != Some(true) {
         anyhow::bail!("slack oauth error: {}", v["error"]);
     }
-    let access_token = v["access_token"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("missing access_token"))?
-        .to_string();
-    let refresh_token = v["refresh_token"].as_str().map(|s| s.to_string());
-    let expires_at = v["expires_in"]
-        .as_i64()
+    // Prefer the user token (authed_user) when present — it reads the connected
+    // user's own channels without inviting a bot. Fall back to the bot token.
+    let user = &v["authed_user"];
+    let has_user = user["access_token"].as_str().is_some();
+    let pick = |field: &str| -> Option<String> {
+        if has_user {
+            user[field].as_str().map(str::to_string)
+        } else {
+            v[field].as_str().map(str::to_string)
+        }
+    };
+    let access_token = pick("access_token")
+        .or_else(|| v["access_token"].as_str().map(str::to_string))
+        .ok_or_else(|| anyhow::anyhow!("missing access_token"))?;
+    let refresh_token = pick("refresh_token");
+    let expires_at = if has_user { user["expires_in"].as_i64() } else { v["expires_in"].as_i64() }
         // 1s..10y: reject a malicious/garbage value that would overflow the datetime add.
         .filter(|s| (1..=315_360_000).contains(s))
         .map(|s| now + Duration::seconds(s));
     let team_id = v["team"]["id"].as_str().unwrap_or_default().to_string();
-    let scopes = v["scope"].as_str().unwrap_or_default().to_string();
+    let scopes = pick("scope")
+        .filter(|s| !s.is_empty())
+        .or_else(|| v["scope"].as_str().map(str::to_string))
+        .unwrap_or_default();
     Ok(OauthTokens { access_token, refresh_token, expires_at, team_id, scopes })
 }
 
@@ -91,6 +103,7 @@ pub struct SlackConfig {
     pub signing_secret: String,
     pub redirect_uri: String,
     pub scopes: String,
+    pub user_scopes: String,
     pub api_base: String,
 }
 
@@ -106,6 +119,8 @@ impl SlackConfig {
                 .unwrap_or_else(|| "http://localhost:8787/oauth/slack/callback".into()),
             scopes: nonempty("SLACK_OAUTH_SCOPES")
                 .unwrap_or_else(|| "channels:history,groups:history,users:read".into()),
+            user_scopes: nonempty("SLACK_USER_SCOPES")
+                .unwrap_or_else(|| "channels:history,channels:read,groups:history,users:read".into()),
             api_base: nonempty("SLACK_API_BASE").unwrap_or_else(|| "https://slack.com/api".into()),
         })
     }
@@ -143,9 +158,10 @@ pub async fn authorize(State(state): State<AppState>) -> Response {
     let _ = state; // AppState kept for a uniform handler signature
     let csrf = sign_state(&cfg.signing_secret, Utc::now().timestamp());
     let url = format!(
-        "https://slack.com/oauth/v2/authorize?client_id={}&scope={}&redirect_uri={}&state={}",
+        "https://slack.com/oauth/v2/authorize?client_id={}&scope={}&user_scope={}&redirect_uri={}&state={}",
         urlencode(&cfg.client_id),
         urlencode(&cfg.scopes),
+        urlencode(&cfg.user_scopes),
         urlencode(&cfg.redirect_uri),
         urlencode(&csrf),
     );
@@ -383,6 +399,22 @@ mod tests {
         assert_eq!(t.refresh_token.as_deref(), Some("xoxe-1-r"));
         assert_eq!(t.team_id, "T123");
         assert!(t.expires_at.is_some());
+    }
+
+    #[test]
+    fn parse_prefers_user_token_when_present() {
+        let now = Utc::now();
+        let v = json!({
+            "ok": true,
+            "access_token": "xoxb-bot",
+            "scope": "incoming-webhook",
+            "team": {"id": "T9"},
+            "authed_user": { "access_token": "xoxp-user", "scope": "channels:history,channels:read" }
+        });
+        let t = parse_oauth_response(&v, now).unwrap();
+        assert_eq!(t.access_token, "xoxp-user"); // user token wins
+        assert_eq!(t.scopes, "channels:history,channels:read");
+        assert_eq!(t.team_id, "T9");
     }
 
     #[test]
