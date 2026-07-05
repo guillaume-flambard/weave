@@ -80,7 +80,9 @@ ou
 X-API-Key: <clé>
 ```
 
-Routes publiques (sans clé) : `GET /health`, `GET /events`, `GET /org/presets`, `GET /connections`, flux OAuth.
+Routes publiques (sans clé) : `GET /health`, `GET /org/presets`, flux OAuth.
+
+Quand `WEAVE_API_KEY` est défini, les routes mémoire (`/stats`, `/facts`, `/skills`, …) et **SSE** exigent la clé. Pour SSE (`EventSource` sans headers) : `GET /events?api_key=…`.
 
 ---
 
@@ -220,7 +222,7 @@ Cluster de skills matures par `(équipe, thème)`. Statut initial : **`pending`*
 |----------|------|
 | `DATABASE_URL` | Postgres + pgvector |
 | `WEAVE_API_ADDR` | Bind (défaut `127.0.0.1:8787`) |
-| `WEAVE_API_KEY` | Auth Bearer / X-API-Key |
+| `WEAVE_API_KEY` | Auth Bearer / X-API-Key (mutations + reads mémoire quand défini) |
 | `WEAVE_LLM_PROVIDER` | `groq` · `ollama` · `claude` · `heuristic` |
 | `GROQ_API_KEY` | Clé Groq (recommandé prod) |
 | `WEAVE_EMBED_PROVIDER` | `hash` ou `ollama` |

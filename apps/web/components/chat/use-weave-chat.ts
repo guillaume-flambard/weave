@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { askMemory } from "../../lib/api";
 import { useLocale } from "../../lib/i18n/context";
-import { useWeaveDashboard } from "../../hooks/use-weave-dashboard";
+import { useWeaveContext } from "../../hooks/weave-context";
 import { intentLabel, parseChatInput } from "./chat-orchestrator";
 import { useOnboarding } from "./onboarding/onboarding-context";
 import type { ChatBlock, ChatTurn, ParsedIntent } from "./types";
@@ -26,7 +26,12 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
   const onboardingSeeded = useRef(false);
   const simulateDoneHandled = useRef(false);
 
-  const dash = useWeaveDashboard(onSkillEmerged);
+  const { dash, setSkillNotify } = useWeaveContext();
+
+  useEffect(() => {
+    setSkillNotify(onSkillEmerged);
+    return () => setSkillNotify(() => {});
+  }, [onSkillEmerged, setSkillNotify]);
 
   const appendTurn = useCallback((userText: string, blocks: ChatBlock[]) => {
     setTurns((prev) => [...prev, { id: newTurnId(), userText, blocks }]);

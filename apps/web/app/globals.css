@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "driver.js/dist/driver.css";
 
 /* Design tokens — Notion aesthetic: white, near-black ink, thin gray hairlines. */
 @theme {
@@ -442,55 +441,4 @@ body {
 * {
   scrollbar-width: thin;
   scrollbar-color: #d9d8d4 transparent;
-}
-
-/* ---- driver.js: restyled to the Notion look ---- */
-.driver-popover.weave-tour {
-  background: var(--color-surface);
-  color: var(--color-ink);
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(15, 15, 15, 0.12);
-  font-family: inherit;
-}
-.driver-popover.weave-tour .driver-popover-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-ink);
-}
-.driver-popover.weave-tour .driver-popover-description {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-ink-soft);
-}
-.driver-popover.weave-tour .driver-popover-progress-text {
-  font-size: 11px;
-  color: var(--color-muted);
-}
-.driver-popover.weave-tour .driver-popover-navigation-btns button {
-  background: var(--color-accent);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  text-shadow: none;
-}
-.driver-popover.weave-tour .driver-popover-navigation-btns button:hover {
-  background: var(--color-accent-deep);
-}
-.driver-popover.weave-tour .driver-popover-prev-btn {
-  background: var(--color-subtle) !important;
-  color: var(--color-ink-soft) !important;
-}
-.driver-popover.weave-tour .driver-popover-close-btn {
-  color: var(--color-muted);
-}
-.driver-popover.weave-tour .driver-popover-arrow {
-  border-color: var(--color-surface);
-}
-/* softer backdrop than driver.js default black */
-.driver-overlay {
-  opacity: 1 !important;
 }

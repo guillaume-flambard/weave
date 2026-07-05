@@ -138,8 +138,12 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
 
   // Single SSE connection for the lifetime of the dashboard.
   const refetchThrottle = useRef(0);
+  const apiKey = process.env.NEXT_PUBLIC_WEAVE_API_KEY || "";
   useEffect(() => {
-    const es = new EventSource(`${API}/events`);
+    const eventsUrl = apiKey
+      ? `${API}/events?api_key=${encodeURIComponent(apiKey)}`
+      : `${API}/events`;
+    const es = new EventSource(eventsUrl);
     let healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
     const scheduleHealthCheck = () => {
@@ -202,7 +206,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
       es.close();
       if (healthCheckTimer) clearTimeout(healthCheckTimer);
     };
-  }, []);
+  }, [apiKey]);
 
   const switchOrg = useCallback(async (id: string) => {
     setPendingAction("switchOrg");

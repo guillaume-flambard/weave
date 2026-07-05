@@ -219,7 +219,7 @@ fn cors_layer() -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
-        .allow_methods([Method::GET, Method::POST, Method::PUT])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers(Any)
 }
 
@@ -257,7 +257,14 @@ fn embed_model() -> String {
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({ "status": "ok", "service": "weave", "llm": state.runtime.llm_name() }))
+    use weave_store::EventStore;
+    let db = state.store.count_events(DEFAULT_PROJECT).await.is_ok();
+    Json(json!({
+        "status": if db { "ok" } else { "degraded" },
+        "service": "weave",
+        "llm": state.runtime.llm_name(),
+        "database": if db { "ok" } else { "error" },
+    }))
 }
 
 async fn serve_openapi() -> impl IntoResponse {
@@ -267,7 +274,15 @@ async fn serve_openapi() -> impl IntoResponse {
     )
 }
 
-fn require_api_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+pub(crate) fn require_api_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    require_api_key_from(state, headers, None)
+}
+
+fn require_api_key_from(
+    state: &AppState,
+    headers: &HeaderMap,
+    query_key: Option<&str>,
+) -> Result<(), AppError> {
     let Some(expected) = &state.api_key else {
         return Ok(());
     };
@@ -276,7 +291,8 @@ fn require_api_key(state: &AppState, headers: &HeaderMap) -> Result<(), AppError
         .get("authorization")
         .and_then(|h| h.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .or_else(|| headers.get("x-api-key").and_then(|h| h.to_str().ok()));
+        .or_else(|| headers.get("x-api-key").and_then(|h| h.to_str().ok()))
+        .or(query_key.filter(|k| !k.is_empty()));
 
     // Constant-time compare so a wrong key can't be recovered via response timing.
     use subtle::ConstantTimeEq;
@@ -323,8 +339,10 @@ async fn replay(
 /// Current org config for a tenant (stored, else the matching preset).
 async fn get_org(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::OrgStore;
     let org = project_of(&q);
     if let Some(cfg) = state.store.get_org_config(&org).await? {
@@ -589,22 +607,32 @@ async fn reset(
     Ok(Json(json!({ "status": "reset", "project": project })))
 }
 
-/// SSE live feed of pipeline events.
+#[derive(Deserialize)]
+struct ApiKeyQ {
+    api_key: Option<String>,
+}
+
+/// SSE live feed of pipeline events. When `WEAVE_API_KEY` is set, pass `?api_key=` (EventSource cannot send headers).
 async fn sse_events(
     State(state): State<AppState>,
-) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    headers: HeaderMap,
+    Query(q): Query<ApiKeyQ>,
+) -> Result<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>, AppError> {
+    require_api_key_from(&state, &headers, q.api_key.as_deref())?;
     let rx = state.runtime.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
         Ok(ev) => Some(Ok(SseEvent::default().json_data(ev).unwrap_or_default())),
         Err(_) => None, // lagged; skip
     });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 async fn get_stats(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::{AgentStore, EventStore, FactStore, GraphStore, SkillStore};
     let p = project_of(&q);
     Ok(Json(json!({
@@ -620,8 +648,10 @@ async fn get_stats(
 
 async fn get_facts(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::FactStore;
     let facts = state.store.recent_facts(&project_of(&q), 100).await?;
     Ok(Json(json!(facts)))
@@ -629,8 +659,10 @@ async fn get_facts(
 
 async fn get_skills(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::SkillStore;
     let skills = state.store.skills(&project_of(&q)).await?;
     Ok(Json(json!(skills)))
@@ -638,8 +670,10 @@ async fn get_skills(
 
 async fn get_graph(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::GraphStore;
     let project = project_of(&q);
     let entities = state.store.entities(&project).await?;
@@ -667,8 +701,10 @@ async fn ask(
 
 async fn get_agents(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ProjectQ>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     use weave_store::AgentStore;
     let agents = state.store.agents(&project_of(&q)).await?;
     Ok(Json(json!(agents)))
@@ -679,14 +715,20 @@ async fn get_agents(
 /// via env, so this only clears OAuth-stored rows.
 async fn disconnect_provider(
     State(state): State<AppState>,
+    headers: HeaderMap,
     axum::extract::Path(provider): axum::extract::Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let removed = state.store.delete_connections(&provider).await?;
     Ok(Json(json!({ "status": "disconnected", "provider": provider, "removed": removed })))
 }
 
 /// Non-sensitive list of stored connections, so the UI can show real connect state.
-async fn get_connections(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn get_connections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
     let conns = state.store.list_connections().await?;
     let mut out: Vec<Value> = conns
         .iter()

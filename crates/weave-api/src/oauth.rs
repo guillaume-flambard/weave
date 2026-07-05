@@ -90,7 +90,7 @@ pub fn parse_oauth_response(v: &serde_json::Value, now: DateTime<Utc>) -> anyhow
 
 use crate::AppState;
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 use weave_store::NewConnection;
@@ -302,8 +302,12 @@ pub struct ImportBody {
 /// the connect UI exists.
 pub async fn import_from_env(
     State(state): State<AppState>,
+    headers: HeaderMap,
     body: Option<Json<ImportBody>>,
 ) -> Response {
+    if let Err(err) = crate::require_api_key(&state, &headers) {
+        return err.into_response();
+    }
     let Some(cfg) = SlackConfig::from_env() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "slack oauth not configured").into_response();
     };
