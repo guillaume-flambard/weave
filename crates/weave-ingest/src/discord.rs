@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_uses_bot_token_header() {
+    async fn poll_all_uses_bot_token_header_not_oauth() {
         use wiremock::matchers::{header, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
         let server = MockServer::start().await;
