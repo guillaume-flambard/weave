@@ -449,7 +449,7 @@ export function ChatBlockView({ block, chat }: { block: ChatBlock; chat: WeaveCh
 
   if (block.type === "answer") {
     return (
-      <div className="wv-chat-block">
+      <div className="wv-chat-block" data-testid="chat-answer">
         <AnswerBlock
           answer={block.data.answer}
           skillUsed={block.data.skill_used ?? undefined}

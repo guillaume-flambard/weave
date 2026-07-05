@@ -99,6 +99,7 @@ jobs:
           --health-retries=5
     env:
       DATABASE_URL: postgres://weave:weave@localhost:5433/weave
+      WEAVE_ENC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       WEAVE_LLM_PROVIDER: heuristic
       WEAVE_EMBED_PROVIDER: hash
       WEAVE_E2E_API: http://127.0.0.1:8787
