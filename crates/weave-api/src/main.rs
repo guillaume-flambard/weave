@@ -1353,6 +1353,10 @@ mod tests {
 
         let Some(app) = test_app().await else { return };
 
+        // Unique per run so repeated local runs against the persistent test DB stay isolated.
+        let guild = format!("G-{}", uuid::Uuid::new_v4());
+        let msg_id = format!("M-{}", uuid::Uuid::new_v4());
+
         // A stored discord connection (guild id in team_id).
         let url = std::env::var("TEST_DATABASE_URL").unwrap();
         let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
@@ -1360,7 +1364,7 @@ mod tests {
         store.migrate().await.unwrap();
         let cipher = weave_store::Cipher::from_base64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap();
         store.upsert_connection(&cipher, &weave_store::NewConnection {
-            provider: "discord".into(), team_id: "G1".into(),
+            provider: "discord".into(), team_id: guild.clone(),
             access_token: "unused".into(), refresh_token: None, expires_at: None, scopes: String::new(),
         }).await.unwrap();
 
@@ -1368,11 +1372,11 @@ mod tests {
         let mock = MockServer::start().await;
         Mock::given(method("GET")).and(path("/users/@me"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "BOT" }))).mount(&mock).await;
-        Mock::given(method("GET")).and(path("/guilds/G1/channels"))
+        Mock::given(method("GET")).and(path(format!("/guilds/{guild}/channels")))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{ "id": "C1", "type": 0 }]))).mount(&mock).await;
         Mock::given(method("GET")).and(path("/channels/C1/messages"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-                { "id": "M1", "content": "<@BOT> comment relancer minerva ?", "mentions": [{ "id": "BOT" }], "author": { "username": "sarah", "bot": false } }
+                { "id": msg_id, "content": "<@BOT> comment relancer minerva ?", "mentions": [{ "id": "BOT" }], "author": { "username": "sarah", "bot": false } }
             ]))).mount(&mock).await;
         Mock::given(method("POST")).and(path("/channels/C1/messages"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "M2" })))
@@ -1394,6 +1398,10 @@ mod tests {
         let r2 = call().await.unwrap();
         assert_eq!(json_body(r2).await["answered"], 0);
         // mock.expect(1) verifies exactly one POST occurred, on drop.
+
+        for k in ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN", "DISCORD_API_BASE"] {
+            std::env::remove_var(k);
+        }
     }
 
     #[tokio::test]
