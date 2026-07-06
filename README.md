@@ -1,5 +1,11 @@
 # Weave — Cognitive Runtime (MVP)
 
+> **État : prototype (MVP).** Codé à la suite du webinar Notion × Pennylane sur les
+> agents personnalisés (le passage sur le mur niveau 2 → niveau 3, et l'idée de
+> compétences partagées « par défaut, avec le contexte », décrite comme possible nulle
+> part aujourd'hui). Rien n'est figé : l'objectif est de valider l'approche, pas de
+> livrer un produit fini.
+
 Une couche de **mémoire organisationnelle partagée** qui transforme en continu
 l'activité d'une équipe (Slack, GitHub, Notion, Linear…) en connaissance
 structurée — et **fait émerger des Skills automatiquement** à partir des patterns
