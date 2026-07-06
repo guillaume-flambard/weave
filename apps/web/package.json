@@ -11,7 +11,8 @@
     "build": "next build",
     "start": "next start -p 3200",
     "check:api-errors": "node scripts/check-api-errors.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "capture:demo": "node scripts/capture-demo-media.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",
