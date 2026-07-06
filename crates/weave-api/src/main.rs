@@ -190,6 +190,7 @@ fn build_app(state: AppState) -> Router {
         .route("/oauth/notion/authorize", get(notion_oauth::authorize))
         .route("/oauth/notion/callback", get(notion_oauth::callback))
         .route("/ingest/discord", post(ingest_discord))
+        .route("/respond/discord", post(respond_discord))
         .route("/oauth/discord/authorize", get(discord_oauth::authorize))
         .route("/oauth/discord/callback", get(discord_oauth::callback))
         .layer(cors_layer())
@@ -592,6 +593,53 @@ async fn ingest_discord(
         tracing::info!("discord ingest complete ({n} events)");
     });
     Ok(Json(json!({ "status": "ingesting", "source": "discord", "events": n, "project": project })))
+}
+
+/// Discover unanswered @mentions in the connected Discord guild, answer them via
+/// the memory-grounded pipeline, and post each reply back in-thread. Already-answered
+/// messages (tracked in the `answered_mentions` ledger) are skipped.
+async fn respond_discord(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ProjectQ>,
+) -> Result<Json<Value>, AppError> {
+    require_api_key(&state, &headers)?;
+    let project = project_of(&q);
+
+    let Some(conn) = state.store.get_active_connection(&state.cipher, "discord").await? else {
+        return Ok(Json(json!({ "status": "not_configured", "hint": "connect Discord first" })));
+    };
+    let Some(cfg) = discord_oauth::DiscordConfig::from_env() else {
+        return Ok(Json(json!({ "status": "not_configured", "hint": "DISCORD_BOT_TOKEN not set" })));
+    };
+
+    let max_channels = std::env::var("DISCORD_MAX_CHANNELS").ok().and_then(|v| v.parse().ok()).unwrap_or(15);
+    let max_messages = std::env::var("DISCORD_MAX_MESSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+    let conn_client = DiscordConnector::for_guild(cfg.bot_token, conn.team_id, &project, max_channels, max_messages)
+        .with_base(cfg.api_base);
+
+    let bot_id = conn_client.bot_user_id().await?;
+    let mentions = conn_client.discover_mentions(&bot_id).await?;
+
+    let mut answered = 0usize;
+    for m in mentions {
+        if state.store.is_answered("discord", &m.message_id).await? {
+            continue;
+        }
+        let (a, agent) = state.runtime.answer_for_chat(&project, &m.text).await?;
+        let reply = match agent {
+            Some(name) => format!("{}\n\n↳ via {name}", a.answer),
+            None => a.answer,
+        };
+        match conn_client.post_reply(&m.channel_id, &reply, &m.message_id).await {
+            Ok(_) => {
+                state.store.mark_answered("discord", &m.message_id).await?;
+                answered += 1;
+            }
+            Err(e) => tracing::warn!("discord reply failed for {}: {e}", m.message_id),
+        }
+    }
+    Ok(Json(json!({ "status": "responded", "answered": answered, "project": project })))
 }
 
 /// Ingest a real Notion workspace when NOTION_TOKEN is set; otherwise replay the
@@ -1285,6 +1333,67 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = json_body(resp).await;
         assert_eq!(body["status"], "not_configured");
+    }
+
+    #[tokio::test]
+    async fn respond_discord_without_connection_is_not_configured() {
+        let Some(app) = test_app().await else { return };
+        let resp = app
+            .oneshot(Request::builder().method("POST").uri("/respond/discord").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(json_body(resp).await["status"], "not_configured");
+    }
+
+    #[tokio::test]
+    async fn respond_discord_answers_a_mention_once() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let Some(app) = test_app().await else { return };
+
+        // A stored discord connection (guild id in team_id).
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let store = PgStore::from_pool(pool);
+        store.migrate().await.unwrap();
+        let cipher = weave_store::Cipher::from_base64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap();
+        store.upsert_connection(&cipher, &weave_store::NewConnection {
+            provider: "discord".into(), team_id: "G1".into(),
+            access_token: "unused".into(), refresh_token: None, expires_at: None, scopes: String::new(),
+        }).await.unwrap();
+
+        // Mock the Discord API.
+        let mock = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/users/@me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "BOT" }))).mount(&mock).await;
+        Mock::given(method("GET")).and(path("/guilds/G1/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{ "id": "C1", "type": 0 }]))).mount(&mock).await;
+        Mock::given(method("GET")).and(path("/channels/C1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "M1", "content": "<@BOT> comment relancer minerva ?", "mentions": [{ "id": "BOT" }], "author": { "username": "sarah", "bot": false } }
+            ]))).mount(&mock).await;
+        Mock::given(method("POST")).and(path("/channels/C1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "M2" })))
+            .expect(1) // posted exactly once across BOTH calls below
+            .mount(&mock).await;
+
+        std::env::set_var("DISCORD_CLIENT_ID", "cid");
+        std::env::set_var("DISCORD_CLIENT_SECRET", "csecret");
+        std::env::set_var("DISCORD_BOT_TOKEN", "btok");
+        std::env::set_var("DISCORD_API_BASE", mock.uri());
+
+        let call = || app.clone().oneshot(
+            Request::builder().method("POST").uri("/respond/discord?project=chatdemo").body(Body::empty()).unwrap()
+        );
+        let r1 = call().await.unwrap();
+        assert_eq!(r1.status(), StatusCode::OK);
+        assert_eq!(json_body(r1).await["answered"], 1);
+        // Second cycle: already answered → no new post, answered 0.
+        let r2 = call().await.unwrap();
+        assert_eq!(json_body(r2).await["answered"], 0);
+        // mock.expect(1) verifies exactly one POST occurred, on drop.
     }
 
     #[tokio::test]
