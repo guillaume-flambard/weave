@@ -13,6 +13,25 @@ function newTurnId(): string {
   return crypto.randomUUID();
 }
 
+/** Human-readable label for the user bubble, so slash commands never surface as "/simulate". */
+function friendlyLabel(
+  intent: ParsedIntent,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  switch (intent.kind) {
+    case "ask": return intent.question;
+    case "simulate": return t("chat.chipSimulate");
+    case "sources": return t("chat.chipConnect");
+    case "agents": return t("chat.cmdAgents");
+    case "memory": return t("chat.cmdMemory");
+    case "overview": return t("chat.cmdOverview");
+    case "govern": return t("chat.cmdGovern");
+    case "scope": return `${t("chat.cmdScope")} · ${intent.team}`;
+    case "help": return t("chat.cmdHelp");
+    case "freeform": return intent.text;
+  }
+}
+
 export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
   const { t } = useLocale();
   const searchParams = useSearchParams();
@@ -190,7 +209,9 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
 
     setInput("");
     const intent = parseChatInput(text);
-    await runIntent(intent, text);
+    // Echo a human label in the user bubble, never the raw "/simulate" etc.
+    const label = text.startsWith("/") ? friendlyLabel(intent, t) : text;
+    await runIntent(intent, label);
   }, [busy, input, onboarding.isActive, runIntent, setInput, appendBlocks, t]);
 
   const runChip = useCallback((cmd: string) => {
@@ -270,7 +291,10 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     if (onboarding.awaitingSimulate) return;
     if (dash.pendingAction !== "simulate" && streamingSim.current) {
       streamingSim.current = false;
-      appendBlocks([{ type: "system", content: t("chat.simulateDone"), kind: "success" }]);
+      appendBlocks([
+        { type: "system", content: t("chat.simulateDone"), kind: "success" },
+        { type: "next_steps" },
+      ]);
     }
   }, [dash.pendingAction, appendBlocks, onboarding.awaitingSimulate, t]);
 

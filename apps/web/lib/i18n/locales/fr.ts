@@ -25,11 +25,11 @@ export const messages = {
     fr: "Français",
   },
   common: {
-    reset: "Vider l'espace",
-    resetting: "Vidage…",
-    ingest: "Ingérer l'activité",
-    ingesting: "Ingestion…",
-    ingestShort: "Ingérer",
+    reset: "Repartir de zéro",
+    resetting: "Réinitialisation…",
+    ingest: "Analyser l'activité",
+    ingesting: "Analyse…",
+    ingestShort: "Analyser",
     ask: "Demander",
     asking: "Recherche…",
     send: "Envoyer",
@@ -65,10 +65,10 @@ export const messages = {
     importExport: "Importer un export",
   },
   levels: {
-    personal: "Personal",
-    team: "Team",
-    project: "Project",
-    organization: "Organization",
+    personal: "Perso",
+    team: "Équipe",
+    project: "Projet",
+    organization: "Organisation",
   },
   errors: {
     apiOffline:
@@ -98,11 +98,11 @@ export const messages = {
         "La mémoire partagée se remplit au fil des échanges de vos équipes avec l'IA.",
     },
     skills: {
-      title: "Compétences vivantes",
+      title: "Compétences",
       subtitle:
-        "Nées des projets · promues au niveau org quand partagées entre équipes.",
+        "Nées du travail des équipes · partagées à toute l'organisation quand elles reviennent.",
       empty:
-        "Aucune compétence pour l'instant — elles émergent quand un schéma se répète assez souvent.",
+        "Aucune compétence pour l'instant — elles apparaissent toutes seules quand une même question revient souvent.",
     },
     agents: {
       title: "Agents",
@@ -116,7 +116,7 @@ export const messages = {
         "Des questions répétées dans un projet font émerger des compétences. Le même schéma dans plusieurs équipes peut promouvoir une compétence d'organisation.",
     },
     ask: {
-      title: "Interroger la mémoire partagée",
+      title: "Poser une question",
       placeholder: "Posez une question à l'organisation…",
       defaultQuestion: "Comment relancer la synchro bancaire ?",
     },
@@ -128,14 +128,14 @@ export const messages = {
     ingestion: {
       running: "Analyse de l'activité Slack & Notion",
       subtitle:
-        "Weave lit chaque message, en extrait des faits, repère les schémas qui se répètent, puis fait émerger des compétences réutilisables.",
+        "Weave lit chaque message, en extrait des faits, repère les questions qui reviennent, puis crée des compétences réutilisables.",
       progress:
         "{events}/{target} messages · {facts} faits extraits · {skills} compétences",
-      traceTitle: "Raisonnement en direct",
+      traceTitle: "En direct",
       stepRead: "Lecture",
-      stepExtract: "Extraction",
-      stepPattern: "Schéma",
-      stepSkill: "Émergence",
+      stepExtract: "Faits",
+      stepPattern: "Question récurrente",
+      stepSkill: "Compétence",
       stepAgent: "Agent",
     },
     footer:
@@ -143,10 +143,10 @@ export const messages = {
   },
   feed: {
     fact: "fait",
-    pattern: "schéma « {signature} »",
-    skillBorn: "compétence née",
-    orgSkillPromoted: "compétence org promue",
-    agentEmerged: "agent émergé",
+    pattern: "question récurrente « {signature} »",
+    skillBorn: "compétence créée",
+    orgSkillPromoted: "compétence partagée à l'org",
+    agentEmerged: "agent créé",
   },
   tour: {
     next: "Suivant",
@@ -275,19 +275,25 @@ export const messages = {
   chat: {
     welcomeTitle: "Que voulez-vous faire ?",
     welcomeBody:
-      "Slack et Notion alimentent la mémoire PennyLane. Posez une question, connectez une source ou simulez l'activité — tout se passe ici.",
-    placeholder: "Posez une question ou tapez /sources, /simulate, /ask…",
-    slashHint: "Entrée pour envoyer · Maj+Entrée pour un saut de ligne",
+      "Posez une question à la mémoire de votre organisation. Ou lancez la démo pour voir Weave apprendre de l'activité de vos équipes.",
+    placeholder: "Posez une question…",
+    slashHint: "Entrée pour envoyer · Maj+Entrée pour un saut de ligne · tapez / pour les commandes",
     chipConnect: "Connecter Slack / Notion",
-    chipSimulate: "Simuler l'activité",
+    chipSimulate: "Lancer la démo",
     chipAsk: "Poser une question",
     connect: "Connecter",
     helpBody:
-      "Commandes : /sources · /simulate · /ask … · /agents · /memory · /overview · /govern · /scope data",
+      "Commandes : /ask une question · /simulate (lancer la démo) · /sources · /agents · /help",
     freeformHint:
-      "Je peux interroger la mémoire, connecter des sources ou lancer une simulation. Essayez une question ou /help.",
+      "Je peux répondre à une question, connecter des sources ou lancer la démo. Essayez une question, ou tapez /help.",
     simulateStarting: "Lancement de l'analyse…",
-    simulateDone: "Analyse terminée — la mémoire est à jour.",
+    simulateDone: "Analyse terminée. Weave a lu l'activité des équipes et créé des compétences réutilisables à partir des questions qui revenaient.",
+    nextTitle: "La mémoire de votre équipe est prête",
+    nextHint: "Posez-lui une question : la réponse s'appuie sur cette mémoire et cite d'où vient chaque information.",
+    nextSkillsLink: "Voir les {count} compétences créées",
+    suggest1: "Comment relancer la synchro bancaire ?",
+    suggest2: "Quel format pour l'export FEC ?",
+    suggest3: "Quelle convention pour nommer les branches ?",
     askSearching: "Recherche dans la mémoire organisationnelle…",
     noMemory: "Aucune mémoire pertinente pour cette question.",
     scopeSet: "Périmètre défini sur {scope}.",
@@ -301,10 +307,10 @@ export const messages = {
     slashMenuLabel: "Menu des commandes",
     cmdSources: "Sources",
     cmdSourcesDesc: "Connecter Slack, Notion et les autres intégrations",
-    cmdSimulate: "Simuler",
-    cmdSimulateDesc: "Ingérer l'activité d'équipe dans la mémoire",
-    cmdAsk: "Interroger",
-    cmdAskDesc: "Poser une question à la mémoire organisationnelle",
+    cmdSimulate: "Lancer la démo",
+    cmdSimulateDesc: "Analyser l'activité d'équipe et remplir la mémoire",
+    cmdAsk: "Poser une question",
+    cmdAskDesc: "Poser une question à la mémoire de l'organisation",
     cmdAgents: "Agents",
     cmdAgentsDesc: "Voir et approuver les agents émergents",
     cmdMemory: "Mémoire",

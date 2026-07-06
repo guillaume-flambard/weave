@@ -86,8 +86,10 @@ export function useChatOnboardingState() {
       return;
     }
 
-    setStepIndex(0);
-    setStatus("active");
+    // First visit: land straight in a usable chat — no forced onboarding, no
+    // locked composer. The guided tour stays available on demand via
+    // ?onboarding=restart (Réglages → Visite produit).
+    setStatus("done");
     setHydrated(true);
   }, [searchParams]);
 

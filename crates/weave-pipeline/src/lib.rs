@@ -101,6 +101,9 @@ const AGENT_MAX_COUNT: usize = 8;
 const AGENT_DEADLINE_SECS: u64 = 180;
 /// A non-general domain needs this many skills before a specialist emerges.
 const AGENT_EMERGE_THRESHOLD: usize = 2;
+/// Minimum cosine similarity for a retrieved fact to count as relevant provenance
+/// (semantic gate; real embeddings). Below this the question is treated as off-topic.
+const RELEVANCE_MIN_COSINE: f32 = 0.70;
 
 struct Budget {
     spent: usize,
@@ -152,7 +155,11 @@ pub struct AnswerResult {
 
 pub struct Runtime {
     store: Arc<dyn Store>,
+    /// Used for ingestion: extraction, skill/agent synthesis, canonicalization.
     llm: Arc<dyn LlmGateway>,
+    /// Used to answer questions. Decoupled from `llm` so ingestion can run on a
+    /// fast/deterministic provider while answers use a conversational model.
+    answer_llm: Arc<dyn LlmGateway>,
     embedder: Arc<dyn EmbeddingGateway>,
     threshold: i32,
     tx: broadcast::Sender<PipelineEvent>,
@@ -168,11 +175,18 @@ impl Runtime {
         let (tx, _) = broadcast::channel(1024);
         Runtime {
             store,
+            answer_llm: llm.clone(),
             llm,
             embedder,
             threshold,
             tx,
         }
+    }
+
+    /// Override the provider used to answer questions (ingestion keeps `llm`).
+    pub fn with_answer_llm(mut self, answer_llm: Arc<dyn LlmGateway>) -> Self {
+        self.answer_llm = answer_llm;
+        self
     }
 
     /// Subscribe to the live pipeline feed.
@@ -779,9 +793,31 @@ impl Runtime {
 
         // Hybrid retrieval: vector + full-text, merged.
         let q_emb = self.embedder.embed(question).await?;
-        let mut hits = self.store.similar_facts(project, &q_emb, 8).await?;
-        hits.extend(self.store.search_facts(project, question, 8).await?);
-        let facts = dedup_facts(hits);
+        let vec_hits = self.store.similar_facts(project, &q_emb, 8).await?;
+        let ft_hits = self.store.search_facts(project, question, 8).await?;
+
+        // Relevance gate: surface a fact as provenance only when retrieval genuinely
+        // matches it — semantic similarity (cosine over real embeddings) or a full-text
+        // keyword hit (ts_rank). Both are standard IR signals; no hardcoded topics. An
+        // off-topic question clears the gate empty, so the LLM answers generally instead of
+        // citing unrelated memory (no misleading provenance).
+        let mut relevant_ids = std::collections::HashSet::new();
+        for h in &ft_hits {
+            if h.score > 0.0 {
+                relevant_ids.insert(h.fact.id);
+            }
+        }
+        for h in &vec_hits {
+            if h.score >= RELEVANCE_MIN_COSINE {
+                relevant_ids.insert(h.fact.id);
+            }
+        }
+        let mut hits = vec_hits;
+        hits.extend(ft_hits);
+        let facts: Vec<Fact> = dedup_facts(hits)
+            .into_iter()
+            .filter(|f| relevant_ids.contains(&f.id))
+            .collect();
 
         // Group by memory level for provenance.
         let mut by_level: HashMap<&'static str, Vec<FactBrief>> = HashMap::new();
@@ -820,7 +856,7 @@ impl Runtime {
             context.push('\n');
         }
 
-        let answer = self.llm.answer(question, &context).await?;
+        let answer = self.answer_llm.answer(question, &context).await?;
         Ok(AnswerResult {
             answer,
             skill_used: skill.map(|s| s.name),

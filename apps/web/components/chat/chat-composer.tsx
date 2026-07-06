@@ -7,11 +7,13 @@ import { filterSlashCommands, isSlashMenuOpen, type SlashCommandDef } from "./ch
 import { SlashCommandMenu } from "./slash-command-menu";
 import type { WeaveChat } from "./use-weave-chat";
 
+// No hardcoded topics: connect + run the demo are actions; "ask" just primes the
+// composer so the user (or the emerged-skill suggestions) drives the question.
 const CHIPS = [
   { cmd: "/sources", labelKey: "chat.chipConnect" as const, icon: Plug },
   { cmd: "/simulate", labelKey: "chat.chipSimulate" as const, icon: Zap, tour: "simulate" },
-  { cmd: "/ask Comment relancer la synchro bancaire ?", labelKey: "chat.chipAsk" as const, icon: MessageSquare },
-];
+  { prefill: "/ask ", labelKey: "chat.chipAsk" as const, icon: MessageSquare },
+] as const;
 
 export function ChatComposer({ chat }: { chat: WeaveChat }) {
   const t = useT();
@@ -93,20 +95,37 @@ export function ChatComposer({ chat }: { chat: WeaveChat }) {
       <div className="mx-auto max-w-[760px] wv-chat-composer-shell">
         {showWelcome && (
           <div className="flex flex-wrap gap-2 mb-3">
-            {CHIPS.map(({ cmd, labelKey, icon: Icon, tour }, i) => (
-              <button
-                key={cmd}
-                type="button"
-                data-tour={tour}
-                disabled={busy}
-                onClick={() => runChip(cmd)}
-                className="wv-chat-chip-in inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-soft hover:bg-subtle hover:text-ink cursor-pointer font-sans disabled:opacity-50"
-                style={{ "--wv-chip-delay": `${i * 70}ms` } as React.CSSProperties}
-              >
-                <Icon size={14} />
-                {t(labelKey)}
-              </button>
-            ))}
+            {CHIPS.map((chip, i) => {
+              const { labelKey, icon: Icon } = chip;
+              const prefill = "prefill" in chip ? chip.prefill : undefined;
+              const cmd = "cmd" in chip ? chip.cmd : undefined;
+              const onClick = () => {
+                if (prefill) {
+                  setInput(prefill);
+                  requestAnimationFrame(() => {
+                    const el = textareaRef.current;
+                    el?.focus();
+                    el?.setSelectionRange(prefill.length, prefill.length);
+                  });
+                } else if (cmd) {
+                  runChip(cmd);
+                }
+              };
+              return (
+                <button
+                  key={labelKey}
+                  type="button"
+                  data-tour={"tour" in chip ? chip.tour : undefined}
+                  disabled={busy}
+                  onClick={onClick}
+                  className="wv-chat-chip-in inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-soft hover:bg-subtle hover:text-ink cursor-pointer font-sans disabled:opacity-50"
+                  style={{ "--wv-chip-delay": `${i * 70}ms` } as React.CSSProperties}
+                >
+                  <Icon size={14} />
+                  {t(labelKey)}
+                </button>
+              );
+            })}
           </div>
         )}
 
