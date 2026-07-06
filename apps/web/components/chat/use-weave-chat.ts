@@ -9,6 +9,8 @@ import { intentLabel, parseChatInput } from "./chat-orchestrator";
 import { useOnboarding } from "./onboarding/onboarding-context";
 import type { ChatBlock, ChatTurn, ParsedIntent } from "./types";
 
+const CHAT_STORAGE_KEY = "weave.chat.turns";
+
 function newTurnId(): string {
   return crypto.randomUUID();
 }
@@ -44,6 +46,7 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
   const streamingSim = useRef(false);
   const onboardingSeeded = useRef(false);
   const simulateDoneHandled = useRef(false);
+  const conversationRestored = useRef(false);
 
   const { dash, setSkillNotify } = useWeaveContext();
 
@@ -51,6 +54,32 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     setSkillNotify(onSkillEmerged);
     return () => setSkillNotify(() => {});
   }, [onSkillEmerged, setSkillNotify]);
+
+  // Persist the conversation per tab so leaving the chat (Réglages, a skill/agent
+  // page…) and coming back doesn't lose it. Restore once on mount, then mirror
+  // every change. sessionStorage (not local) keeps it scoped to the tab session.
+  useEffect(() => {
+    if (conversationRestored.current) return;
+    conversationRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem(CHAT_STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as ChatTurn[];
+        if (Array.isArray(saved) && saved.length > 0) setTurns(saved);
+      }
+    } catch {
+      /* ignore corrupt/unavailable storage */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!conversationRestored.current) return;
+    try {
+      sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(turns));
+    } catch {
+      /* ignore quota/unavailable storage */
+    }
+  }, [turns]);
 
   const appendTurn = useCallback((userText: string, blocks: ChatBlock[]) => {
     setTurns((prev) => [...prev, { id: newTurnId(), userText, blocks }]);
