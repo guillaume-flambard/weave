@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useMemo } from "react";
-import { WifiOff } from "lucide-react";
+import { RotateCcw, WifiOff } from "lucide-react";
 import { useShellHeader } from "../layout/use-shell-header";
 import { useT } from "../../lib/i18n/context";
 import { ChatComposer } from "./chat-composer";
@@ -38,8 +38,19 @@ function ChatShellInner() {
           ))}
         </select>
       ) : null}
+      <button
+        type="button"
+        onClick={() => dash.reset()}
+        disabled={dash.pendingAction === "reset"}
+        title={t("common.reset")}
+        aria-label={t("common.reset")}
+        className="h-9 inline-flex items-center gap-1.5 border border-line rounded-md bg-surface px-2.5 text-sm text-ink-soft hover:text-ink hover:bg-subtle cursor-pointer font-sans disabled:opacity-50"
+      >
+        <RotateCcw size={14} />
+        <span className="hidden sm:inline">{t("common.reset")}</span>
+      </button>
     </div>
-  ), [dash.orgId, dash.llm, dash.pendingAction, dash.presets, dash.switchOrg, t]);
+  ), [dash.orgId, dash.llm, dash.pendingAction, dash.presets, dash.switchOrg, dash.reset, t]);
 
   useShellHeader({ actions: orgSwitcher });
 

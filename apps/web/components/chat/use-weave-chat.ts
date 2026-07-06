@@ -81,6 +81,25 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     }
   }, [turns]);
 
+  // "Repartir de zéro" clears the memory; clear the conversation with it so the chat
+  // returns to a fresh welcome instead of showing turns about now-deleted data.
+  const resetSeen = useRef(false);
+  useEffect(() => {
+    if (dash.pendingAction === "reset") {
+      if (!resetSeen.current) {
+        resetSeen.current = true;
+        setTurns([]);
+        try {
+          sessionStorage.removeItem(CHAT_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
+    } else {
+      resetSeen.current = false;
+    }
+  }, [dash.pendingAction]);
+
   const appendTurn = useCallback((userText: string, blocks: ChatBlock[]) => {
     setTurns((prev) => [...prev, { id: newTurnId(), userText, blocks }]);
   }, []);
