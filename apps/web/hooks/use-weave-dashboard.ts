@@ -5,28 +5,12 @@ import { askMemory, approveAgent as approveAgentRequest, API, getAgents, getFact
 import { useLocale } from "../lib/i18n/context";
 import type { Agent, Answer, Fact, Feed, OrgCfg, Skill, WeaveStats } from "../lib/types";
 import type { Scope } from "../lib/scope";
+import { SIM_MAX_STALL_TICKS, simProgressMetrics, simulationDone, type SimProgress } from "./sim-progress";
 
 export type { Scope };
 export type Flash = { msg: string; kind: "skill" | "agent" | "org" } | null;
-
-export type SimProgress = {
-  /** Total events in store when simulation started */
-  startEvents: number;
-  /** Number of new messages being processed in this batch */
-  batchSize: number;
-  events: number;
-  /** Events ingested this batch (from live SSE), used when stats lag */
-  ingested: number;
-  facts: number;
-  skills: number;
-};
-
-export function simProgressMetrics(p: SimProgress) {
-  const fromStats = Math.max(0, p.events - p.startEvents);
-  const processed = Math.min(p.batchSize, Math.max(fromStats, p.ingested));
-  const pct = p.batchSize > 0 ? Math.min(100, Math.round((processed / p.batchSize) * 100)) : 100;
-  return { processed, pct, target: p.batchSize };
-}
+export { simProgressMetrics };
+export type { SimProgress };
 
 export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const { t } = useLocale();
@@ -258,17 +242,33 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
 
   const simProgressRef = useRef(simProgress);
   simProgressRef.current = simProgress;
+  // Gate the poll on a stable boolean that flips once when a run starts/ends.
+  // `simulate()` sets pendingAction BEFORE simProgress, so keying the effect on
+  // pendingAction alone would run it while simProgress is still null (guard bails,
+  // interval never starts). Deriving simActive and depending on it ensures the
+  // interval starts the moment simProgress lands, and is torn down on finish.
+  const simActive = simProgress !== null && pendingAction === "simulate";
   useEffect(() => {
-    if (!simProgressRef.current || pendingAction !== "simulate") return;
+    if (!simActive) return;
+    // Idle detection: a re-run over an already-ingested store inserts 0 new
+    // events, so the event/ingested thresholds never trip and completion rides
+    // solely on the (lossy) `simulation_complete` SSE. Count consecutive polls
+    // with no change so we can stop instead of hanging at `0/batch`.
+    let stallTicks = 0;
+    let lastSig = "";
     const interval = setInterval(async () => {
       try {
         const stats = await getStats(orgId);
         const prev = simProgressRef.current;
         if (!prev) return;
-        if (
-          stats.events >= prev.startEvents + prev.batchSize
-          || prev.ingested >= prev.batchSize
-        ) {
+        const sig = `${stats.events}:${stats.facts}:${stats.skills.length}`;
+        if (sig === lastSig) {
+          stallTicks += 1;
+        } else {
+          stallTicks = 0;
+          lastSig = sig;
+        }
+        if (simulationDone(prev, stats.events, stallTicks, SIM_MAX_STALL_TICKS)) {
           finishSimulationRef.current();
           return;
         }
@@ -284,7 +284,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [pendingAction, orgId, refetch]);
+  }, [simActive, orgId]);
 
   const reset = useCallback(async () => {
     setPendingAction("reset");
