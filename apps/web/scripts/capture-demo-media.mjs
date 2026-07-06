@@ -39,15 +39,11 @@ function pickDemoTargets(skills, agents) {
 }
 
 async function waitForDetail(page, mustInclude) {
-  await page.waitForFunction(
-    (needle) => {
-      const body = document.body.textContent || "";
-      if (/introuvable|not found/i.test(body)) return false;
-      return body.includes(needle);
-    },
-    mustInclude,
-    { timeout: 45_000 },
-  );
+  await page.getByText(mustInclude, { exact: false }).first().waitFor({
+    state: "visible",
+    timeout: 60_000,
+  });
+  await page.waitForTimeout(1200);
 }
 
 async function main() {
