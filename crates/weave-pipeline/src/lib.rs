@@ -827,6 +827,18 @@ impl Runtime {
             layers,
         })
     }
+
+    /// Chat-shaped answer: the memory-grounded answer plus the name of the
+    /// specialist agent that routes to this question (if any, ≥ ROUTE_MIN_SIMILARITY).
+    pub async fn answer_for_chat(
+        &self,
+        project: &str,
+        question: &str,
+    ) -> anyhow::Result<(AnswerResult, Option<String>)> {
+        let a = self.answer(project, question).await?;
+        let agent = self.find_specialist(project, question, "").await?.map(|ag| ag.name);
+        Ok((a, agent))
+    }
 }
 
 /// Heuristic verifier for the orchestration loop: accept a delegated result if
@@ -969,6 +981,21 @@ mod tests {
             !skills.is_empty(),
             "a skill should emerge via the payload-topic hard-override anchor"
         );
+    }
+
+    #[tokio::test]
+    async fn answer_for_chat_returns_answer_and_no_agent_when_none() {
+        let Some(store) = test_store().await else { return };
+        let rt = Runtime::new(
+            store.clone(),
+            std::sync::Arc::new(weave_llm::HeuristicLlm),
+            std::sync::Arc::new(ZeroEmbedder),
+            3,
+        );
+        let project = format!("chat-{}", uuid::Uuid::new_v4());
+        let (a, agent) = rt.answer_for_chat(&project, "comment relancer minerva ?").await.unwrap();
+        assert!(!a.answer.is_empty());
+        assert!(agent.is_none(), "no agents in a fresh project → no routed agent");
     }
 }
 
