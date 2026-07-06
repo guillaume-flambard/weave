@@ -27,25 +27,17 @@ function inferKind(action: string): Kind {
   return "respond";
 }
 
-const DEFAULT_TASK = "Comment relancer la synchro bancaire d'un client ?";
-
-export default function AgentPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-bg" />}>
-      <AgentPageInner />
-    </Suspense>
-  );
-}
+const DEFAULT_TASK_KEY = "workspace.ask.defaultQuestion";
 
 function AgentPageInner() {
   const { width: w } = useViewport();
   const t = useT();
   const weave = useWeaveProject();
   const params = useSearchParams();
-  const agentName = params.get("name") || "specialiste-data-finance-ops";
+  const agentName = params.get("name");
 
   const agent = useMemo(
-    () => weave.agents.find((a) => a.name === agentName) ?? weave.agents.find((a) => a.status === "pending") ?? null,
+    () => (agentName ? weave.agents.find((a) => a.name === agentName) ?? null : null),
     [weave.agents, agentName],
   );
 
@@ -95,14 +87,46 @@ function AgentPageInner() {
     if (!agent || !isActive) return;
     setRunning(true);
     try {
-      setRunResult(await weave.runAgentTask(agent.name, DEFAULT_TASK));
+      setRunResult(await weave.runAgentTask(agent.name, t(DEFAULT_TASK_KEY)));
       setTraceOpen(true);
     } finally {
       setRunning(false);
     }
-  }, [agent, isActive, weave]);
+  }, [agent, isActive, weave, t]);
 
   useShellHeader({ subtitle: agent?.name ?? t("agentDetail.breadcrumb") });
+
+  if (isLoading) {
+    return <div className="max-w-[860px] mx-auto px-6 pb-24"><div className="wv-shimmer h-[220px] rounded-xl mt-6" /></div>;
+  }
+
+  if (!agentName) {
+    return (
+      <div className="max-w-[860px] mx-auto px-6 pb-24">
+        <h1 className="pt-6 text-[22px] font-semibold text-ink">{t("agentDetail.breadcrumb")}</h1>
+        {weave.agents.length === 0 ? (
+          <p className="mt-4 text-ink-soft">{t("agent.notFoundBody")}</p>
+        ) : (
+          <ul className="mt-5 flex flex-col gap-2">
+            {weave.agents.map((a) => (
+              <li key={a.id}>
+                <Link
+                  href={`/agent?name=${encodeURIComponent(a.name)}`}
+                  className="flex items-center gap-2.5 no-underline border border-line rounded-lg bg-surface p-[11px_14px] hover:border-[color-mix(in_srgb,var(--accent)_28%,var(--line))]"
+                >
+                  <Bot size={15} className="text-accent shrink-0" />
+                  <span className="font-mono text-sm text-ink truncate flex-1">{a.name}</span>
+                  <Badge tone={a.status === "active" ? "active" : "pending"}>
+                    {a.status === "active" ? t("agentDetail.statusActive") : t("agentDetail.statusPending")}
+                  </Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
 
   if (isNotFound) {
     return (
@@ -111,7 +135,11 @@ function AgentPageInner() {
           <Bot size={26} className="mx-auto text-muted" />
           <div className="mt-4 text-[16px] font-semibold">{t("agent.notFoundTitle")}</div>
           <div className="mt-1.5 text-sm text-ink-soft leading-relaxed">{t("agent.notFoundBody")}</div>
-          <div className="mt-[18px]"><Link href="/" className="no-underline"><Button variant="secondary">{t("common.backToWorkspace")}</Button></Link></div>
+          <div className="mt-[18px] flex justify-center gap-2">
+            <Link href="/agent" className="no-underline">
+              <Button variant="secondary">{t("common.backToWorkspace")}</Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -155,10 +183,7 @@ function AgentPageInner() {
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="wv-shimmer h-[220px] rounded-xl" />
-        ) : (
-          <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
             {/* Block 1 — Triggers */}
             <Panel title={t("agentDetail.triggersTitle")} icon={<Zap size={15} strokeWidth={2} />} subtitle={t("agentDetail.triggersSubtitle")}>
               <div className="flex flex-col gap-2.5">
@@ -270,7 +295,6 @@ function AgentPageInner() {
               </Panel>
             )}
           </div>
-        )}
       </div>
 
       {toast && (
@@ -289,5 +313,13 @@ function BlockRow({ icon, title, body }: { icon: React.ReactNode; title: string;
         <div className="mt-0.5 text-[12.5px] text-ink-soft leading-normal">{body}</div>
       </div>
     </div>
+  );
+}
+
+export default function AgentPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg" />}>
+      <AgentPageInner />
+    </Suspense>
   );
 }
