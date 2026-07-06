@@ -15,7 +15,7 @@ test.describe.skip("Parcours démo complet (legacy workspace)", () => {
     page.on("console", (msg) => {
       if (msg.type() === "error") issues.push({ at: at(), kind: "console", detail: msg.text().slice(0, 300) });
     });
-    page.on("pageerror", (err) => issues.push({ at: at(), kind: "pageerror", detail: String(err).slice(0, 300) });
+    page.on("pageerror", (err) => issues.push({ at: at(), kind: "pageerror", detail: String(err).slice(0, 300) }));
     page.on("response", (res) => {
       const url = res.url();
       if ((url.includes("127.0.0.1") || url.includes("localhost")) && res.status() >= 400) {
