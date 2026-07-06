@@ -238,11 +238,13 @@ impl DiscordConnector {
                         }
                         let Some(mid) = m["id"].as_str() else { continue };
                         let author = m["author"]["username"].as_str().unwrap_or("unknown").to_string();
+                        let text = strip_mention(content, bot_user_id);
+                        if text.is_empty() { continue; }
                         out.push(MentionMsg {
                             channel_id: ch.clone(),
                             message_id: mid.to_string(),
                             author,
-                            text: strip_mention(content, bot_user_id),
+                            text,
                         });
                     }
                 }
@@ -432,5 +434,23 @@ mod tests {
         assert_eq!(ms[0].channel_id, "C1");
         assert!(!ms[0].text.contains("<@BOT>")); // mention token stripped
         assert!(ms[0].text.contains("relancer minerva"));
+    }
+
+    #[tokio::test]
+    async fn discover_mentions_skips_bare_mention() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/guilds/G1/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "C1", "type": 0 }
+            ]))).mount(&server).await;
+        Mock::given(method("GET")).and(path("/channels/C1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "M1", "content": "<@BOT>", "mentions": [{ "id": "BOT" }], "author": { "username": "u", "bot": false } }
+            ]))).mount(&server).await;
+        let c = DiscordConnector::for_guild("tok", "G1", "blueowl", 15, 50).with_base(server.uri());
+        let ms = c.discover_mentions("BOT").await.unwrap();
+        assert!(ms.is_empty());
     }
 }

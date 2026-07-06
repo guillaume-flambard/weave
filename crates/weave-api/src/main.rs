@@ -623,7 +623,9 @@ async fn respond_discord(
 
     let mut answered = 0usize;
     for m in mentions {
-        if state.store.is_answered("discord", &m.message_id).await? {
+        // Atomic claim: only the cycle that wins the claim answers. Prevents overlapping
+        // cron cycles from double-replying the same mention.
+        if !state.store.claim_mention("discord", &m.message_id).await? {
             continue;
         }
         let (a, agent) = state.runtime.answer_for_chat(&project, &m.text).await?;
@@ -632,11 +634,12 @@ async fn respond_discord(
             None => a.answer,
         };
         match conn_client.post_reply(&m.channel_id, &reply, &m.message_id).await {
-            Ok(_) => {
-                state.store.mark_answered("discord", &m.message_id).await?;
-                answered += 1;
+            Ok(_) => answered += 1,
+            Err(e) => {
+                tracing::warn!("discord reply failed for {}: {e}", m.message_id);
+                // release the claim so the next cycle retries this mention
+                let _ = state.store.release_mention("discord", &m.message_id).await;
             }
-            Err(e) => tracing::warn!("discord reply failed for {}: {e}", m.message_id),
         }
     }
     Ok(Json(json!({ "status": "responded", "answered": answered, "project": project })))

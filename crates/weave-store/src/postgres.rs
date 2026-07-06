@@ -81,6 +81,30 @@ impl PgStore {
         Ok(())
     }
 
+    /// Atomically claim a mention for answering. Returns true if THIS caller won
+    /// the claim (no prior row), false if already claimed/answered. Concurrency-safe.
+    pub async fn claim_mention(&self, provider: &str, message_id: &str) -> anyhow::Result<bool> {
+        let claimed = sqlx::query_scalar::<_, i32>(
+            "INSERT INTO answered_mentions (provider, message_id) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING RETURNING 1",
+        )
+        .bind(provider)
+        .bind(message_id)
+        .fetch_optional(self.pool())
+        .await?;
+        Ok(claimed.is_some())
+    }
+
+    /// Release a claim so the mention can be retried (used when the reply post fails).
+    pub async fn release_mention(&self, provider: &str, message_id: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM answered_mentions WHERE provider = $1 AND message_id = $2")
+            .bind(provider)
+            .bind(message_id)
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
+
     /// Wipe all data for one project so a demo can be replayed from scratch.
     pub async fn reset(&self, project: &str) -> anyhow::Result<()> {
         for table in ["agents", "skills", "patterns", "facts", "relationships", "entities", "events"] {
@@ -557,5 +581,36 @@ fn row_to_skill(r: &PgRow) -> Skill {
         memory_level: MemoryLevel::from_str_lossy(r.get::<String, _>("memory_level").as_str()),
         theme: r.try_get("theme").unwrap_or_default(),
         created_at: r.get::<DateTime<Utc>, _>("created_at"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    async fn store() -> Option<PgStore> {
+        let url = std::env::var("TEST_DATABASE_URL").ok()?;
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.ok()?;
+        let store = PgStore::from_pool(pool);
+        store.migrate().await.ok()?;
+        Some(store)
+    }
+
+    /// Proves the atomic-claim invariant that closes the I1 race: two overlapping
+    /// cron cycles racing `claim_mention` for the same message id can't both win.
+    #[tokio::test]
+    async fn respond_discord_claim_prevents_double_answer() {
+        let Some(store) = store().await else { return };
+        let mid = format!("M-{}", uuid::Uuid::new_v4());
+
+        // First claim wins.
+        assert!(store.claim_mention("discord", &mid).await.unwrap());
+        // Second claim (simulating an overlapping cycle) loses.
+        assert!(!store.claim_mention("discord", &mid).await.unwrap());
+
+        // Releasing (e.g. after a failed post) allows a retry to claim again.
+        store.release_mention("discord", &mid).await.unwrap();
+        assert!(store.claim_mention("discord", &mid).await.unwrap());
     }
 }
