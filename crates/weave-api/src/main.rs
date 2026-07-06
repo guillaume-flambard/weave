@@ -1069,6 +1069,26 @@ mod tests {
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+    // Serializes tests that touch the global `discord` connection row + DISCORD_* env.
+    // cargo runs #[tokio::test]s in parallel; these share the connections table
+    // (keyed by provider, not project) and process env → they must not overlap.
+    static DISCORD_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// Guarantee no `discord` connection + no leaked DISCORD_* env for the
+    /// "without connection" assertions, regardless of test order.
+    async fn clear_discord_state() {
+        if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
+            if let Ok(pool) = PgPoolOptions::new().max_connections(1).connect(&url).await {
+                let store = PgStore::from_pool(pool);
+                let _ = store.migrate().await;
+                let _ = store.delete_connections("discord").await;
+            }
+        }
+        for k in ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN", "DISCORD_API_BASE"] {
+            std::env::remove_var(k);
+        }
+    }
+
     #[derive(Default)]
     struct StubLlm;
 
@@ -1319,10 +1339,12 @@ mod tests {
 
     #[tokio::test]
     async fn ingest_discord_without_connection_is_not_configured() {
+        let _guard = DISCORD_TEST_LOCK.lock().await;
         let Some(app) = test_app().await else {
             eprintln!("skipping api test: TEST_DATABASE_URL not set or unavailable");
             return;
         };
+        clear_discord_state().await;
         let resp = app
             .oneshot(
                 Request::builder()
@@ -1340,7 +1362,9 @@ mod tests {
 
     #[tokio::test]
     async fn respond_discord_without_connection_is_not_configured() {
+        let _guard = DISCORD_TEST_LOCK.lock().await;
         let Some(app) = test_app().await else { return };
+        clear_discord_state().await;
         let resp = app
             .oneshot(Request::builder().method("POST").uri("/respond/discord").body(Body::empty()).unwrap())
             .await
@@ -1354,6 +1378,7 @@ mod tests {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
+        let _guard = DISCORD_TEST_LOCK.lock().await;
         let Some(app) = test_app().await else { return };
 
         // Unique per run so repeated local runs against the persistent test DB stay isolated.
@@ -1405,6 +1430,7 @@ mod tests {
         for k in ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN", "DISCORD_API_BASE"] {
             std::env::remove_var(k);
         }
+        store.delete_connections("discord").await.unwrap();
     }
 
     #[tokio::test]
