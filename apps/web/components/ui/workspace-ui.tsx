@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { CSSProperties, ReactNode } from "react";
 import { Badge } from "./primitives";
 
@@ -103,14 +104,17 @@ export function FlashBanner({ kind = "skill", emerge = false, children }:
 export function AnswerBlock({ answer, skillUsed, layers }:
   { answer: string; skillUsed?: string; layers: { level: string; facts: { author: string; content: string }[] }[] }) {
   return (
-    <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)" }}>
+    <div className="grid gap-4 items-start grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <div>
         {skillUsed && (
           <div className="mb-2">
-            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-accent-deep bg-accent-soft rounded-full px-[9px] py-0.5"
-              style={{ border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)" }}>
+            <Link
+              href={`/competence?name=${encodeURIComponent(skillUsed)}`}
+              className="inline-flex items-center gap-1.5 no-underline text-[11.5px] text-accent-deep bg-accent-soft rounded-full px-[9px] py-0.5 transition-colors hover:bg-[color-mix(in_srgb,var(--accent-soft)_70%,white)]"
+              style={{ border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)" }}
+            >
               compétence utilisée · <span className="font-mono">{skillUsed}</span>
-            </span>
+            </Link>
           </div>
         )}
         <div className="text-[13.5px] text-ink leading-[1.6]">{answer}</div>

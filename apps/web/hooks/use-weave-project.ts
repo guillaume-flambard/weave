@@ -9,7 +9,7 @@ import { useWeaveDash } from "./weave-context";
 export function useWeaveProject() {
   const dash = useWeaveDash();
   const [stats, setStats] = useState<WeaveStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const refreshStats = useCallback(async (id: string) => {
     const st = await getStats(id);
@@ -22,16 +22,18 @@ export function useWeaveProject() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    setStatsLoading(true);
     refreshStats(dash.orgId)
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setStatsLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [dash.orgId, dash.skills.length, dash.facts.length, dash.agents.length, refreshStats]);
+
+  const loading = statsLoading || !dash.dataReady;
 
   const ask = useCallback(
     (question: string) => askMemory(dash.orgId, question),
@@ -61,6 +63,7 @@ export function useWeaveProject() {
     connected: dash.connected,
     llm: dash.llm,
     loading,
+    dataReady: dash.dataReady,
     error: dash.errorMessage,
     isEmpty,
     refresh: () => refreshStats(dash.orgId),

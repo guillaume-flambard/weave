@@ -52,6 +52,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const [pendingAction, setPendingAction] = useState<"simulate" | "reset" | "ask" | "inject" | "approveAgent" | "switchOrg" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [simProgress, setSimProgress] = useState<SimProgress | null>(null);
+  const [dataReady, setDataReady] = useState(false);
 
   const orgIdRef = useRef(orgId);
   orgIdRef.current = orgId;
@@ -119,6 +120,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   // Reload org-scoped data when org changes (no new SSE).
   useEffect(() => {
     let cancelled = false;
+    setDataReady(false);
     (async () => {
       try {
         const cfg = await getOrgConfig(orgId);
@@ -131,6 +133,8 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
         setAgents(ag);
       } catch (error) {
         if (!cancelled) setErrorMessage(normalizeError(error));
+      } finally {
+        if (!cancelled) setDataReady(true);
       }
     })();
     return () => { cancelled = true; };
@@ -220,6 +224,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
       setAnswer(null);
       setScope({});
       setNewest(null);
+      setDataReady(false);
       setOrgId(id);
       setTimeout(() => refetch(id), 300);
     } catch (error) {
@@ -359,6 +364,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     pendingAction,
     simProgress,
     errorMessage,
+    dataReady,
     question,
     setQuestion,
     answer,

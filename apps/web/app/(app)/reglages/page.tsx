@@ -12,17 +12,18 @@ import { useViewport } from "../../../hooks/use-viewport";
 import { authorizeUrl } from "../../../lib/api";
 import { primaryConnectors } from "../../../lib/connectors";
 import type { OrgCfg } from "../../../lib/types";
+import { PageSkeleton } from "../../../components/ui/page-skeleton";
 
 type Level = "personal" | "team" | "project" | "organization";
 type Access = Record<string, Record<Level, boolean>>;
 type Team = { name: string; members: string[]; dot: string };
 
 const TEAM_DOTS = ["var(--lvl-team)", "var(--lvl-project)", "var(--lvl-personal)", "var(--lvl-org)"];
-const LEVELS: { key: Level; label: string; tone: Level }[] = [
-  { key: "personal", label: "Personal", tone: "personal" },
-  { key: "team", label: "Team", tone: "team" },
-  { key: "project", label: "Project", tone: "project" },
-  { key: "organization", label: "Organization", tone: "organization" },
+const LEVELS: { key: Level; labelKey: string; tone: Level }[] = [
+  { key: "personal", labelKey: "levels.personal", tone: "personal" },
+  { key: "team", labelKey: "levels.team", tone: "team" },
+  { key: "project", labelKey: "levels.project", tone: "project" },
+  { key: "organization", labelKey: "levels.organization", tone: "organization" },
 ];
 
 const FALLBACK_TEAMS: Team[] = [
@@ -103,6 +104,10 @@ export default function ReglagesPage() {
       [team]: { ...prev[team], [level]: !prev[team]?.[level] },
     }));
   };
+
+  if (weave.loading) {
+    return <PageSkeleton variant="settings" />;
+  }
 
   return (
     <div className="mx-auto max-w-[900px] px-6 pb-16">
@@ -209,7 +214,7 @@ export default function ReglagesPage() {
               <div className="grid items-center bg-subtle border-b border-line" style={{ gridTemplateColumns: "1.4fr repeat(4, 1fr)" }}>
                 <div className="p-[11px_14px] text-[11px] uppercase tracking-wider text-muted font-medium">Équipe peut lire →</div>
                 {LEVELS.map((l) => (
-                  <div key={l.key} className="p-[11px_8px] flex justify-center"><Badge tone={l.tone}>{l.label}</Badge></div>
+                  <div key={l.key} className="p-[11px_8px] flex justify-center"><Badge tone={l.tone}>{tr(l.labelKey)}</Badge></div>
                 ))}
               </div>
               {displayTeams.map((t, ri) => (
@@ -220,7 +225,7 @@ export default function ReglagesPage() {
                   </div>
                   {LEVELS.map((l) => (
                     <div key={l.key} className="p-[10px_8px] flex justify-center">
-                      <Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} lit ${l.label}`} onClick={() => toggleAccess(t.name, l.key)} />
+                      <Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} ${tr(l.labelKey)}`} onClick={() => toggleAccess(t.name, l.key)} />
                     </div>
                   ))}
                 </div>
@@ -237,8 +242,8 @@ export default function ReglagesPage() {
                   <div className="flex flex-col gap-2">
                     {LEVELS.map((l) => (
                       <div key={l.key} className="flex items-center justify-between gap-2.5">
-                        <Badge tone={l.tone}>{l.label}</Badge>
-                        <Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} lit ${l.label}`} onClick={() => toggleAccess(t.name, l.key)} />
+                        <Badge tone={l.tone}>{tr(l.labelKey)}</Badge>
+                        <Toggle on={!!access[t.name]?.[l.key]} aria={`${t.name} ${tr(l.labelKey)}`} onClick={() => toggleAccess(t.name, l.key)} />
                       </div>
                     ))}
                   </div>

@@ -45,9 +45,25 @@
   --scrollbar-thumb: #d9d8d4;
 }
 
-/* Skeleton shimmer for loading states (Claude Design screens). */
-@keyframes wvShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-.wv-shimmer { background: linear-gradient(90deg, var(--subtle) 25%, #efefec 37%, var(--subtle) 63%); background-size: 200% 100%; animation: wvShimmer 1.3s ease-in-out infinite; border-radius: 4px; }
+/* Skeleton shimmer for loading states. */
+@keyframes wvShimmer {
+  0% { background-position: -120% 0; }
+  100% { background-position: 220% 0; }
+}
+.wv-shimmer,
+.wv-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--subtle) 0%,
+    var(--subtle) 40%,
+    #f0f0ed 50%,
+    var(--subtle) 60%,
+    var(--subtle) 100%
+  );
+  background-size: 220% 100%;
+  animation: wvShimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
+}
 @keyframes wvPulse { 0% { box-shadow: 0 0 0 0 rgba(35,131,226,0.35); } 100% { box-shadow: 0 0 0 10px rgba(35,131,226,0); } }
 .wv-pulse { animation: wvPulse 800ms cubic-bezier(0.22,1,0.36,1); }
 @keyframes wvSpin { to { transform: rotate(360deg); } }
@@ -398,7 +414,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wv-shimmer, .wv-pulse, .wv-spin,
+  .wv-shimmer, .wv-skeleton, .wv-pulse, .wv-spin,
   .animate-emerge, .weave-emerge,
   .wv-fade-in, .wv-slide-up, .wv-scale-in, .wv-slide-in-right,
   .wv-drawer-overlay, .wv-drawer-wrap {

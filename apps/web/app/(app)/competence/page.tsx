@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Button, Badge, Avatar } from "../../../components/ui/primitives";
 import { Panel } from "../../../components/ui/workspace-ui";
+import { PageSkeleton, PageSuspenseFallback } from "../../../components/ui/page-skeleton";
 import { useT } from "../../../lib/i18n/context";
 import { useWeaveProject } from "../../../hooks/use-weave-project";
 import { useViewport } from "../../../hooks/use-viewport";
@@ -61,25 +62,7 @@ function CompetencePageInner() {
   if (weave.loading) {
     return (
       <Shell>
-        <div className="max-w-[1360px] mx-auto px-6 pb-16">
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 items-start mt-6">
-            <div className="flex flex-col gap-4">
-              {[40, 180, 128].map((h, i) => (
-                <div key={i} className="border border-line rounded-lg p-4 bg-surface">
-                  <div className="wv-shimmer h-3.5 w-[34%]" />
-                  <div className="wv-shimmer" style={{ height: h, marginTop: 14 }} />
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col gap-4">
-              {[120, 60].map((h, i) => (
-                <div key={i} className="border border-line rounded-lg p-4 bg-surface">
-                  <div className="wv-shimmer" style={{ height: h }} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <PageSkeleton variant={skillName ? "detail" : "list"} />
       </Shell>
     );
   }
@@ -119,13 +102,19 @@ function CompetencePageInner() {
     return (
       <Shell>
         <div className="max-w-[1360px] mx-auto p-6 flex justify-center">
-          <div className="max-w-[440px] w-full text-center border border-line rounded-lg bg-surface p-[32px_28px] mt-8 box-border">
+          <div className="max-w-[440px] w-full text-center border border-line rounded-2xl bg-surface p-[32px_28px] mt-8 box-border wv-fade-in">
             <Sparkles size={26} className="mx-auto text-muted" />
             <div className="mt-4 text-[16px] font-semibold">{t("skill.notFoundTitle")}</div>
             <div className="mt-1.5 text-sm text-ink-soft leading-relaxed">{t("skill.notFoundBody")}</div>
-            <div className="mt-[18px] flex justify-center gap-2">
+            {skillName && (
+              <div className="mt-3 font-mono text-[11.5px] text-muted break-all px-2">{skillName}</div>
+            )}
+            <div className="mt-[18px] flex justify-center gap-2 flex-wrap">
               <Link href="/competence" className="no-underline">
                 <Button variant="secondary">{t("skillDetail.backToSkills")}</Button>
+              </Link>
+              <Link href="/" className="no-underline">
+                <Button variant="ghost">{t("skill.emptyLink")}</Button>
               </Link>
             </div>
           </div>
@@ -152,7 +141,7 @@ function CompetencePageInner() {
 
 export default function CompetencePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-bg" />}>
+    <Suspense fallback={<PageSuspenseFallback />}>
       <CompetencePageInner />
     </Suspense>
   );
@@ -209,7 +198,7 @@ function SkillDetail({
                 ) : (
                   <Sparkles size={17} className="shrink-0 text-accent" />
                 )}
-                <span className="font-mono text-lg font-semibold text-ink break-words">{skill.name}</span>
+                <span className="font-mono text-lg font-semibold text-ink wrap-break-word">{skill.name}</span>
                 <Badge tone={level}>{t(`levels.${level}`)}</Badge>
               </div>
               {!collapsed && (
@@ -260,7 +249,7 @@ function SkillDetail({
               }
             >
               <pre
-                className="wv-scroll m-0 whitespace-pre-wrap break-words rounded-md border border-line bg-subtle p-3.5 text-[12.5px] leading-relaxed text-ink-soft font-mono"
+                className="wv-scroll m-0 whitespace-pre-wrap wrap-break-word rounded-md border border-line bg-subtle p-3.5 text-[12.5px] leading-relaxed text-ink-soft font-mono"
                 style={{ maxHeight: collapseBody ? 220 : "none", overflowY: collapseBody ? "hidden" : "visible" }}
               >
                 {skill.body}

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Button, Badge } from "../../../components/ui/primitives";
 import { Panel, EmptyState } from "../../../components/ui/workspace-ui";
+import { PageSkeleton, PageSuspenseFallback } from "../../../components/ui/page-skeleton";
 import { useShellHeader } from "../../../components/layout/use-shell-header";
 import { useT } from "../../../lib/i18n/context";
 import { useWeaveProject } from "../../../hooks/use-weave-project";
@@ -62,7 +63,7 @@ function AgentPageInner() {
   useEffect(() => () => { clearTimeout(toastT.current); clearTimeout(pulseT.current); }, []);
 
   const isLoading = weave.loading;
-  const isNotFound = !weave.loading && !agent;
+  const isNotFound = weave.dataReady && !!agentName && !agent;
   const isActive = agent?.status === "active";
   const isPending = agent?.status === "pending";
   const isNarrow = w < 768;
@@ -97,15 +98,23 @@ function AgentPageInner() {
   useShellHeader({ subtitle: agent?.name ?? t("agentDetail.breadcrumb") });
 
   if (isLoading) {
-    return <div className="max-w-[860px] mx-auto px-6 pb-24"><div className="wv-shimmer h-[220px] rounded-xl mt-6" /></div>;
+    return <PageSkeleton variant={agentName ? "detail" : "list"} />;
   }
 
   if (!agentName) {
     return (
       <div className="max-w-[860px] mx-auto px-6 pb-24">
         <h1 className="pt-6 text-[22px] font-semibold text-ink">{t("agentDetail.breadcrumb")}</h1>
+        <p className="mt-1 text-sm text-muted">{t("library.subtitle")}</p>
         {weave.agents.length === 0 ? (
-          <p className="mt-4 text-ink-soft">{t("agent.notFoundBody")}</p>
+          <div className="mt-6 border border-line rounded-2xl bg-surface p-6 text-center">
+            <Bot size={24} className="mx-auto text-muted" />
+            <p className="mt-3 text-sm font-medium text-ink m-0">{t("library.emptyTitle")}</p>
+            <p className="mt-1.5 text-sm text-ink-soft m-0">{t("library.emptyBody")}</p>
+            <Link href="/" className="inline-block mt-4 no-underline">
+              <Button variant="secondary">{t("library.goIngest")}</Button>
+            </Link>
+          </div>
         ) : (
           <ul className="mt-5 flex flex-col gap-2">
             {weave.agents.map((a) => (
@@ -131,13 +140,19 @@ function AgentPageInner() {
   if (isNotFound) {
     return (
       <div className="max-w-[1080px] mx-auto p-6 flex justify-center">
-        <div className="max-w-[440px] w-full text-center border border-line rounded-xl bg-surface p-[32px_28px] mt-8 box-border">
+        <div className="max-w-[440px] w-full text-center border border-line rounded-2xl bg-surface p-[32px_28px] mt-8 box-border wv-fade-in">
           <Bot size={26} className="mx-auto text-muted" />
           <div className="mt-4 text-[16px] font-semibold">{t("agent.notFoundTitle")}</div>
           <div className="mt-1.5 text-sm text-ink-soft leading-relaxed">{t("agent.notFoundBody")}</div>
-          <div className="mt-[18px] flex justify-center gap-2">
+          {agentName && (
+            <div className="mt-3 font-mono text-[11.5px] text-muted break-all px-2">{agentName}</div>
+          )}
+          <div className="mt-[18px] flex justify-center gap-2 flex-wrap">
             <Link href="/agent" className="no-underline">
-              <Button variant="secondary">{t("common.backToWorkspace")}</Button>
+              <Button variant="secondary">{t("agentDetail.breadcrumb")}</Button>
+            </Link>
+            <Link href="/" className="no-underline">
+              <Button variant="ghost">{t("library.goIngest")}</Button>
             </Link>
           </div>
         </div>
@@ -151,7 +166,7 @@ function AgentPageInner() {
     <>
       <div className="max-w-[860px] mx-auto px-6 pb-24">
         <nav aria-label={t("agentDetail.breadcrumb")} className="pt-5 flex items-center gap-[7px] text-[12.5px] text-muted">
-          <Link href="/" className="text-muted no-underline hover:text-ink-soft">{t("agentDetail.breadcrumb")}</Link><span>/</span>
+          <Link href="/agent" className="text-muted no-underline hover:text-ink-soft">{t("agentDetail.breadcrumb")}</Link><span>/</span>
           <span className="font-mono text-ink-soft">{agent?.name}</span>
         </nav>
 
@@ -318,7 +333,7 @@ function BlockRow({ icon, title, body }: { icon: React.ReactNode; title: string;
 
 export default function AgentPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-bg" />}>
+    <Suspense fallback={<PageSuspenseFallback />}>
       <AgentPageInner />
     </Suspense>
   );
