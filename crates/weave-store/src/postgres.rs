@@ -56,6 +56,31 @@ impl PgStore {
         Ok(rows)
     }
 
+    /// True if this provider message has already been answered.
+    pub async fn is_answered(&self, provider: &str, message_id: &str) -> anyhow::Result<bool> {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM answered_mentions WHERE provider = $1 AND message_id = $2",
+        )
+        .bind(provider)
+        .bind(message_id)
+        .fetch_one(self.pool())
+        .await?;
+        Ok(n > 0)
+    }
+
+    /// Record a mention as answered (idempotent).
+    pub async fn mark_answered(&self, provider: &str, message_id: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO answered_mentions (provider, message_id) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(provider)
+        .bind(message_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
     /// Wipe all data for one project so a demo can be replayed from scratch.
     pub async fn reset(&self, project: &str) -> anyhow::Result<()> {
         for table in ["agents", "skills", "patterns", "facts", "relationships", "entities", "events"] {
