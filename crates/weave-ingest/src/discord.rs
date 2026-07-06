@@ -71,6 +71,55 @@ pub fn parse_messages(resp: &serde_json::Value, channel: &str, project: &str) ->
     out
 }
 
+/// A message that @mentions the bot, awaiting a reply.
+#[derive(Debug, Clone)]
+pub struct MentionMsg {
+    pub channel_id: String,
+    pub message_id: String,
+    pub author: String,
+    pub text: String,
+}
+
+/// True when the message mentions `bot_user_id` (via the `mentions` array or an
+/// inline `<@id>` / `<@!id>` token).
+pub fn mentions_bot(msg: &serde_json::Value, bot_user_id: &str) -> bool {
+    if let Some(arr) = msg["mentions"].as_array() {
+        if arr.iter().any(|u| u["id"].as_str() == Some(bot_user_id)) {
+            return true;
+        }
+    }
+    let c = msg["content"].as_str().unwrap_or("");
+    c.contains(&format!("<@{bot_user_id}>")) || c.contains(&format!("<@!{bot_user_id}>"))
+}
+
+/// Remove the bot mention tokens from the content, leaving the question text.
+fn strip_mention(content: &str, bot_user_id: &str) -> String {
+    content
+        .replace(&format!("<@{bot_user_id}>"), "")
+        .replace(&format!("<@!{bot_user_id}>"), "")
+        .trim()
+        .to_string()
+}
+
+/// Split `text` into chunks no longer than `max` chars (on char boundaries).
+fn chunk_text(text: &str, max: usize) -> Vec<String> {
+    if text.chars().count() <= max {
+        return vec![text.to_string()];
+    }
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for ch in text.chars() {
+        if cur.chars().count() >= max {
+            out.push(std::mem::take(&mut cur));
+        }
+        cur.push(ch);
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
 impl DiscordConnector {
     /// Multi-channel connector over one guild; discovers the guild's text channels.
     pub fn for_guild(
@@ -134,6 +183,75 @@ impl DiscordConnector {
             }
         }
         Ok(events)
+    }
+
+    async fn post(&self, path: &str, body: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+        let v: serde_json::Value = self
+            .client
+            .post(format!("{}{path}", self.api_base))
+            .header("Authorization", format!("Bot {}", self.token))
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(v)
+    }
+
+    /// The bot's own user id, needed to detect mentions of itself.
+    pub async fn bot_user_id(&self) -> anyhow::Result<String> {
+        let v = self.get("/users/@me", &[]).await?;
+        v["id"].as_str().map(str::to_string).ok_or_else(|| anyhow::anyhow!("no bot id"))
+    }
+
+    /// Post a reply in a channel, threaded to `reply_to_message_id`. Chunks to
+    /// Discord's 2000-char cap; the first chunk carries the reply reference.
+    pub async fn post_reply(&self, channel_id: &str, text: &str, reply_to_message_id: &str) -> anyhow::Result<()> {
+        let chunks = chunk_text(text, 1900);
+        for (i, chunk) in chunks.iter().enumerate() {
+            let mut body = serde_json::json!({ "content": chunk });
+            if i == 0 {
+                body["message_reference"] = serde_json::json!({ "message_id": reply_to_message_id });
+            }
+            self.post(&format!("/channels/{channel_id}/messages"), body).await?;
+        }
+        Ok(())
+    }
+
+    /// Discover unanswered-candidate @mentions of the bot across text channels.
+    pub async fn discover_mentions(&self, bot_user_id: &str) -> anyhow::Result<Vec<MentionMsg>> {
+        let channels = self.discover_channels().await?;
+        let limit = self.max_messages.to_string();
+        let mut out = Vec::new();
+        for ch in channels {
+            match self.get(&format!("/channels/{ch}/messages"), &[("limit", &limit)]).await {
+                Ok(msgs) => {
+                    let Some(arr) = msgs.as_array() else { continue };
+                    for m in arr {
+                        if m["author"]["bot"].as_bool() == Some(true) {
+                            continue;
+                        }
+                        let content = m["content"].as_str().unwrap_or("").trim();
+                        if content.is_empty() || !mentions_bot(m, bot_user_id) {
+                            continue;
+                        }
+                        let Some(mid) = m["id"].as_str() else { continue };
+                        let author = m["author"]["username"].as_str().unwrap_or("unknown").to_string();
+                        let text = strip_mention(content, bot_user_id);
+                        if text.is_empty() { continue; }
+                        out.push(MentionMsg {
+                            channel_id: ch.clone(),
+                            message_id: mid.to_string(),
+                            author,
+                            text,
+                        });
+                    }
+                }
+                Err(e) => tracing::warn!("discord mentions channel {ch} skipped: {e}"),
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -260,5 +378,79 @@ mod tests {
         let c = DiscordConnector::for_guild("testtoken", "G1", "blueowl", 15, 50).with_base(server.uri());
         let events = c.poll_all().await.unwrap();
         assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn mentions_bot_detects_array_and_inline() {
+        let by_array = serde_json::json!({
+            "content": "hey can you help", "mentions": [{ "id": "BOT" }]
+        });
+        assert!(mentions_bot(&by_array, "BOT"));
+        let by_inline = serde_json::json!({ "content": "<@BOT> comment relancer minerva ?", "mentions": [] });
+        assert!(mentions_bot(&by_inline, "BOT"));
+        let by_inline_nick = serde_json::json!({ "content": "<@!BOT> yo", "mentions": [] });
+        assert!(mentions_bot(&by_inline_nick, "BOT"));
+        let no = serde_json::json!({ "content": "no mention here", "mentions": [{ "id": "SOMEONE" }] });
+        assert!(!mentions_bot(&no, "BOT"));
+    }
+
+    #[tokio::test]
+    async fn post_reply_posts_with_message_reference() {
+        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/channels/C1/messages"))
+            .and(body_string_contains("message_reference"))
+            .and(body_string_contains("hello world"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "M2" })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let c = DiscordConnector::for_guild("tok", "G1", "blueowl", 15, 50).with_base(server.uri());
+        c.post_reply("C1", "hello world", "M1").await.unwrap();
+        // server.expect(1) verifies exactly one post on drop
+    }
+
+    #[tokio::test]
+    async fn discover_mentions_keeps_only_bot_mentions() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/guilds/G1/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "C1", "type": 0 }
+            ]))).mount(&server).await;
+        Mock::given(method("GET")).and(path("/channels/C1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "M1", "content": "<@BOT> comment relancer minerva ?", "mentions": [{ "id": "BOT" }], "author": { "username": "sarah", "bot": false } },
+                { "id": "M2", "content": "just chatting", "mentions": [], "author": { "username": "tom", "bot": false } },
+                { "id": "M3", "content": "<@BOT> beep", "mentions": [{ "id": "BOT" }], "author": { "username": "weave", "bot": true } }
+            ]))).mount(&server).await;
+        let c = DiscordConnector::for_guild("tok", "G1", "blueowl", 15, 50).with_base(server.uri());
+        let ms = c.discover_mentions("BOT").await.unwrap();
+        assert_eq!(ms.len(), 1);              // M2 no-mention + M3 bot-author dropped
+        assert_eq!(ms[0].message_id, "M1");
+        assert_eq!(ms[0].channel_id, "C1");
+        assert!(!ms[0].text.contains("<@BOT>")); // mention token stripped
+        assert!(ms[0].text.contains("relancer minerva"));
+    }
+
+    #[tokio::test]
+    async fn discover_mentions_skips_bare_mention() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/guilds/G1/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "C1", "type": 0 }
+            ]))).mount(&server).await;
+        Mock::given(method("GET")).and(path("/channels/C1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": "M1", "content": "<@BOT>", "mentions": [{ "id": "BOT" }], "author": { "username": "u", "bot": false } }
+            ]))).mount(&server).await;
+        let c = DiscordConnector::for_guild("tok", "G1", "blueowl", 15, 50).with_base(server.uri());
+        let ms = c.discover_mentions("BOT").await.unwrap();
+        assert!(ms.is_empty());
     }
 }

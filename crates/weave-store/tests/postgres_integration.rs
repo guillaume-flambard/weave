@@ -257,3 +257,14 @@ async fn agent_lifecycle_is_scoped_to_project() {
 
     assert!(store.agent_by_name(&other_project, agent_name).await.unwrap().is_none());
 }
+
+#[tokio::test]
+async fn answered_mentions_dedup() {
+    let Some(store) = test_store().await else { return }; // match the file's helper
+    let mid = format!("M-{}", uuid::Uuid::new_v4());
+    assert!(!store.is_answered("discord", &mid).await.unwrap());
+    store.mark_answered("discord", &mid).await.unwrap();
+    assert!(store.is_answered("discord", &mid).await.unwrap());
+    // idempotent — marking twice does not error
+    store.mark_answered("discord", &mid).await.unwrap();
+}

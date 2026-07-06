@@ -20,7 +20,10 @@ mod notion;
 mod notion_write;
 pub use simulate::{generate_events, preset_by_org, presets};
 pub use slack::{parse_history as parse_slack_history, SlackConnector};
-pub use discord::{parse_messages as parse_discord_messages, parse_text_channel_ids, DiscordConnector};
+pub use discord::{
+    mentions_bot, parse_messages as parse_discord_messages, parse_text_channel_ids,
+    DiscordConnector, MentionMsg,
+};
 pub use notion::{
     db_row_to_event, page_to_event, parse_page_blocks, rich_text_to_plain, scope_from_ids,
     NotionConnector, NotionScope,
