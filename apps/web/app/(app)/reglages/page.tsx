@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Info, LayoutGrid } from "lucide-react";
-import { Badge } from "../../../components/ui/primitives";
+import { ArrowLeft, Info, LayoutGrid, Loader2 } from "lucide-react";
+import { Badge, Button } from "../../../components/ui/primitives";
 import { useShellHeader } from "../../../components/layout/use-shell-header";
 import { useT } from "../../../lib/i18n/context";
 import { useWeaveProject } from "../../../hooks/use-weave-project";
+import { useLiveConnections } from "../../../hooks/use-live-connections";
 import { useViewport } from "../../../hooks/use-viewport";
+import { authorizeUrl } from "../../../lib/api";
+import { primaryConnectors } from "../../../lib/connectors";
 import type { OrgCfg } from "../../../lib/types";
 
 type Level = "personal" | "team" | "project" | "organization";
@@ -70,6 +73,8 @@ function Toggle({ on, onClick, aria }: { on: boolean; onClick: () => void; aria:
 export default function ReglagesPage() {
   const tr = useT();
   const weave = useWeaveProject();
+  const { providerState, loaded } = useLiveConnections(weave.orgId);
+  const connectors = primaryConnectors(weave.orgId);
   const { width } = useViewport();
   const accessMatrix = width >= 720;
   const [access, setAccess] = useState<Access>(defaultAccess);
@@ -129,6 +134,57 @@ export default function ReglagesPage() {
           <div className="text-lg font-semibold text-ink">{weave.org?.name ?? tr("governance.org")}</div>
           <div className="mt-2 text-sm text-muted">{tr("governance.orgId")} · <span className="font-mono text-ink-soft">{weave.orgId}</span></div>
         </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="m-0 text-sm font-semibold text-ink">{tr("overview.connectedSources")}</h2>
+        <p className="mt-1 text-sm text-ink-soft">{tr("governance.sourcesSubtitle")}</p>
+        <div className="mt-3 border border-line rounded-lg bg-surface divide-y divide-line-soft">
+          {connectors.map((c) => {
+            const st = providerState(c.id);
+            const checking = !loaded && st === "checking";
+            const label = checking
+              ? tr("sources.checking")
+              : st === "connected"
+                ? tr("sources.connectedBadge")
+                : st === "reconnect"
+                  ? tr("sources.reconnectBadge")
+                  : tr("governance.sourcesDisconnected");
+            const tone = st === "connected" ? "active" : st === "reconnect" ? "pending" : "neutral";
+            const oauth = c.id === "slack" || c.id === "notion" || c.id === "discord";
+            return (
+              <div key={c.id} className="p-3.5 px-4 flex items-center gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-ink">{c.name}</span>
+                    {checking ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-muted">
+                        <Loader2 size={12} className="animate-spin" /> {label}
+                      </span>
+                    ) : (
+                      <Badge tone={tone}>{label}</Badge>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted">{c.role}</div>
+                </div>
+                {oauth && st !== "connected" && !checking && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      window.location.href = authorizeUrl(c.id as "slack" | "notion" | "discord");
+                    }}
+                  >
+                    {st === "reconnect" ? tr("sources.reconnectBadge") : tr("chat.connect")}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <Link href="/?cmd=sources" className="mt-3 inline-block text-sm font-medium text-accent-deep no-underline hover:text-accent">
+          {tr("governance.sourcesManage")} →
+        </Link>
       </section>
 
       <section className="mt-8">

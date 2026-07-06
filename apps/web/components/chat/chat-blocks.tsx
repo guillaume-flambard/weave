@@ -9,13 +9,13 @@ import {
 import { Button, Badge, StatusIndicator } from "../ui/primitives";
 import { AnswerBlock, Card, ProgressBar } from "../ui/workspace-ui";
 import { ApiFeedRow } from "../workspace/api-feed-row";
-import { authorizeUrl, disconnectProvider, fetchConnections, ingestDiscord, ingestNotion, ingestSlack } from "../../lib/api";
+import { authorizeUrl, disconnectProvider, ingestDiscord, ingestNotion, ingestSlack } from "../../lib/api";
 import {
-  defaultConnectorStatus,
   primaryConnectors,
   secondaryConnectors,
   summaryConnectors,
 } from "../../lib/connectors";
+import { useLiveConnections } from "../../hooks/use-live-connections";
 import { deriveKpis } from "../../lib/live-metrics";
 import { getScopeLabel, inScope, orgToScopeTeams } from "../../lib/scope";
 import { simProgressMetrics } from "../../hooks/use-weave-dashboard";
@@ -40,11 +40,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const primary = primaryConnectors(orgId);
   const secondary = secondaryConnectors(orgId);
   const [busy, setBusy] = useState<string | null>(null);
-  // Providers really connected in the backend (from GET /connections).
-  const [live, setLive] = useState<Set<string> | null>(null);
-  // True once the first /connections fetch resolves (success or failure) — until
-  // then OAuth rows show a checking state instead of flickering Connect→Connected.
-  const [loaded, setLoaded] = useState(false);
+  const { providerState, loaded, removeProvider, refresh } = useLiveConnections(orgId);
   // Per-provider result line after a sync ("12 éléments lus" / "À jour").
   const [synced, setSynced] = useState<Record<string, string>>({});
   const OAUTH = new Set(["slack", "notion", "discord"]);
@@ -53,34 +49,20 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
 
   // Load real connection state, and read the OAuth redirect result from the URL.
   useEffect(() => {
-    let alive = true;
-    fetchConnections()
-      .then((conns) => {
-        if (alive) setLive(new Set(conns.map((c) => c.provider)));
-      })
-      .catch(() => {
-        if (alive) setLive(null); // API unreachable → fall back to the demo profile
-      })
-      .finally(() => {
-        if (alive) setLoaded(true);
-      });
-
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("connected");
     const err = params.get("connect_error");
-    if (connected) setFlash({ tone: "ok", provider: connected });
-    else if (err) setFlash({ tone: "err", provider: err });
+    if (connected) {
+      setFlash({ tone: "ok", provider: connected });
+      void refresh();
+    } else if (err) setFlash({ tone: "err", provider: err });
     if (connected || err) {
-      // Clean the URL so a refresh doesn't re-flash.
       params.delete("connected");
       params.delete("connect_error");
       const qs = params.toString();
       window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
     }
-    return () => {
-      alive = false;
-    };
-  }, []);
+  }, [refresh]);
 
   // Auto-dismiss the flash after a few seconds.
   useEffect(() => {
@@ -89,13 +71,11 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     return () => window.clearTimeout(id);
   }, [flash]);
 
-  // Real backend state; demo profile only while the API is unreachable.
   const status = (id: string) => {
-    if (live) {
-      if (OAUTH.has(id)) return live.has(id) ? "connected" : "disconnected";
-      return live.has(id) ? "connected" : defaultConnectorStatus(id, orgId);
-    }
-    return defaultConnectorStatus(id, orgId);
+    const st = providerState(id);
+    if (st === "connected") return "connected";
+    if (st === "reconnect") return "error";
+    return "disconnected";
   };
 
   // Connect → full-page OAuth redirect to the backend (→ provider consent).
@@ -110,11 +90,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
     setBusy(id);
     try {
       await disconnectProvider(id);
-      setLive((s) => {
-        const n = new Set(s ?? []);
-        n.delete(id);
-        return n;
-      });
+      removeProvider(id);
       setSynced((s) => {
         const n = { ...s };
         delete n[id];
@@ -146,9 +122,11 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
   };
 
   const renderRow = (c: (typeof primary)[0], isPrimary?: boolean) => {
-    const connected = status(c.id) === "connected";
+    const st = status(c.id);
+    const connected = st === "connected";
+    const needsReconnect = st === "error";
     const connectable = OAUTH.has(c.id);
-    const checking = connectable && !loaded; // first load in flight
+    const checking = connectable && !loaded;
     const working = busy === c.id;
     return (
       <div
@@ -166,7 +144,8 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-ink">{c.name}</span>
             {connected && <StatusIndicator connected labelConnected={t("sources.connectedBadge")} />}
-            {isPrimary && !connected && <Badge tone="team">{t("sources.primaryLabel")}</Badge>}
+            {needsReconnect && <Badge tone="pending">{t("sources.reconnectBadge")}</Badge>}
+            {isPrimary && !connected && !needsReconnect && <Badge tone="team">{t("sources.primaryLabel")}</Badge>}
           </div>
           <div className="mt-0.5 text-xs text-muted">{c.role}</div>
           {connected && (synced[c.id] || c.items) && (
@@ -185,7 +164,7 @@ function ConnectorSetupBlock({ dash }: { dash: WeaveChat["dash"] }) {
           </span>
         ) : !connected && connectable ? (
           <Button variant="primary" size="sm" disabled={working} onClick={() => connect(c.id)}>
-            {working ? <Loader2 size={13} className="animate-spin" /> : t("chat.connect")}
+            {working ? <Loader2 size={13} className="animate-spin" /> : needsReconnect ? t("sources.reconnectBadge") : t("chat.connect")}
           </Button>
         ) : connected && connectable ? (
           <div className="flex items-center gap-1.5 self-center">
@@ -357,20 +336,32 @@ function GovernanceSummaryBlock({ dash }: { dash: WeaveChat["dash"] }) {
   const t = useT();
   const sources = summaryConnectors(dash.orgId);
   const pending = dash.agents.filter((a) => a.status === "pending");
+  const { providerState, loaded } = useLiveConnections(dash.orgId);
+
+  const badgeFor = (id: string) => {
+    const st = providerState(id);
+    if (st === "checking") return { tone: "neutral" as const, label: t("sources.checking") };
+    if (st === "connected") return { tone: "active" as const, label: t("sources.connectedBadge") };
+    if (st === "reconnect") return { tone: "pending" as const, label: t("sources.reconnectBadge") };
+    return { tone: "neutral" as const, label: t("governance.sourcesDisconnected") };
+  };
 
   return (
     <div className="flex flex-col gap-3">
       <div>
         <div className="text-[11px] uppercase tracking-wider text-muted font-medium mb-2">{t("overview.connectedSources")}</div>
         {sources.map((c) => {
-          const st = defaultConnectorStatus(c.id, dash.orgId);
+          const badge = badgeFor(c.id);
+          const checking = !loaded && providerState(c.id) === "checking";
           return (
             <div key={c.id} className="wv-chat-block flex items-center gap-2 mb-2">
-              <Plug size={14} className="text-muted" />
+              {checking ? (
+                <Loader2 size={14} className="text-muted animate-spin shrink-0" />
+              ) : (
+                <ConnectorIcon id={c.id} />
+              )}
               <span className="text-sm text-ink">{c.name}</span>
-              <Badge tone={st === "connected" ? "active" : "neutral"}>
-                {st === "connected" ? t("sources.connectedBadge") : t("governance.sourcesDisconnected")}
-              </Badge>
+              <Badge tone={badge.tone}>{badge.label}</Badge>
             </div>
           );
         })}

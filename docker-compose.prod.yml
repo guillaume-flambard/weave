@@ -1,5 +1,5 @@
 # Weave production stack — fully isolated from the host (own PG container, own network).
-# Env (PG_PASSWORD, WEAVE_ENC_KEY, SLACK_*) come from --env-file on the VPS, never committed.
+# Env (PG_PASSWORD, WEAVE_ENC_KEY, WEAVE_API_KEY, SLACK_*) come from --env-file on the VPS, never committed.
 services:
   weave-postgres:
     image: pgvector/pgvector:pg16
@@ -27,6 +27,7 @@ services:
     environment:
       DATABASE_URL: postgres://weave:${PG_PASSWORD}@weave-postgres:5432/weave
       WEAVE_ENC_KEY: ${WEAVE_ENC_KEY}
+      WEAVE_API_KEY: ${WEAVE_API_KEY:-}
       WEAVE_API_ADDR: 0.0.0.0:8787
       WEAVE_WEB_URL: https://strayeye.com
       SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
@@ -61,6 +62,8 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WEAVE_API_KEY: ${WEAVE_API_KEY:-}
     container_name: weave-web
     restart: unless-stopped
     environment:
