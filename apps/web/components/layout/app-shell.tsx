@@ -23,10 +23,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100dvh",
+        minHeight: "100dvh",
         width: "100%",
         maxWidth: "100%",
-        overflowX: "hidden",
+        overflow: "hidden",
         display: "flex",
         background: "var(--bg)",
         fontFamily: "var(--font-sans)",
@@ -71,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </header>
         )}
-        <main style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
           <PageTransition>{children}</PageTransition>
         </main>
       </div>

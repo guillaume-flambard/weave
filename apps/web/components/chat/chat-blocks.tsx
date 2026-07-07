@@ -405,7 +405,7 @@ function SimProgressBlock({ dash }: { dash: WeaveChat["dash"] }) {
             {t("workspace.ingestion.traceTitle")}
           </div>
           {trace.map((ev, i) => (
-            <div key={`${ev.type}-${i}`} className="wv-chat-feed-in">
+            <div key={ev._k ?? `${ev.type}-${i}`} className="wv-chat-feed-in">
               <ApiFeedRow ev={ev} showPipelineStep />
             </div>
           ))}
@@ -510,7 +510,7 @@ export function ChatBlockView({ block, chat }: { block: ChatBlock; chat: WeaveCh
         {items.length === 0 ? (
           <p className="m-0 text-xs text-muted">{t("chat.emptyFeed")}</p>
         ) : items.map((ev, i) => (
-          <div key={`${ev.type}-${i}`}><ApiFeedRow ev={ev} /></div>
+          <div key={ev._k ?? `${ev.type}-${i}`}><ApiFeedRow ev={ev} /></div>
         ))}
       </div>
     );
