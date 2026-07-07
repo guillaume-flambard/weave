@@ -13,9 +13,35 @@ async function clearOnboarding(page: import("@playwright/test").Page) {
   );
 }
 
+// First visit lands in a usable chat (no forced onboarding). To exercise the
+// guided tour, seed an active state so hydration starts at the intro step.
+// Seeded only if absent, so a reload after advancing keeps the persisted step
+// instead of snapping back to intro.
+async function startOnboardingActive(page: import("@playwright/test").Page) {
+  await page.addInitScript(
+    ([stateKey, legacyKey]) => {
+      localStorage.removeItem(legacyKey);
+      if (!localStorage.getItem(stateKey)) {
+        localStorage.setItem(
+          stateKey,
+          JSON.stringify({
+            v: 1,
+            phase: "active",
+            stepIndex: 0,
+            stepId: "intro",
+            awaitingSimulate: false,
+            updatedAt: "2020-01-01T00:00:00.000Z",
+          }),
+        );
+      }
+    },
+    [ONBOARDING_KEY, LEGACY_KEY] as const,
+  );
+}
+
 test.describe("Onboarding chat", () => {
   test("nouvel utilisateur voit l'étape intro", async ({ page }) => {
-    await clearOnboarding(page);
+    await startOnboardingActive(page);
     await page.goto("/?tour=off");
 
     await expect(page.getByTestId("onboarding-step-intro")).toBeVisible({ timeout: 15_000 });
@@ -24,7 +50,7 @@ test.describe("Onboarding chat", () => {
   });
 
   test("Passer termine l'introduction", async ({ page }) => {
-    await clearOnboarding(page);
+    await startOnboardingActive(page);
     await page.goto("/?tour=off");
 
     await expect(page.getByTestId("onboarding-step-intro")).toBeVisible({ timeout: 15_000 });
@@ -67,15 +93,8 @@ test.describe("Onboarding chat", () => {
   });
 
   test("persistance après refresh — reste à l'étape sources", async ({ page }) => {
+    await startOnboardingActive(page);
     await page.goto("/?tour=off");
-    await page.evaluate(
-      ([stateKey, legacyKey]) => {
-        localStorage.removeItem(stateKey);
-        localStorage.removeItem(legacyKey);
-      },
-      [ONBOARDING_KEY, LEGACY_KEY] as const,
-    );
-    await page.reload();
 
     await expect(page.getByTestId("onboarding-step-intro")).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: /Commencer|Get started/i }).click();
@@ -96,13 +115,15 @@ test.describe("Onboarding chat", () => {
       ONBOARDING_KEY,
     );
 
-    await page.reload();
+    // Reload WITHOUT the restart param: persistence (not a fresh restart) must
+    // restore the sources step from saved state.
+    await page.goto("/?tour=off");
     await expect(page.getByTestId("onboarding-step-sources")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("heading", { name: /Connecter vos sources|Connect your sources/i })).toBeVisible();
   });
 
   test("intro → sources affiche Slack et Notion", async ({ page }) => {
-    await clearOnboarding(page);
+    await startOnboardingActive(page);
     await page.goto("/?tour=off");
 
     await expect(page.getByTestId("onboarding-step-intro")).toBeVisible({ timeout: 15_000 });
