@@ -30,6 +30,10 @@ async function proxy(req: NextRequest, path: string[]) {
   const headers = new Headers(req.headers);
   headers.delete("host");
   headers.delete("content-length");
+  // Strip hop-by-hop headers before forwarding: undici's fetch rejects a
+  // forwarded `connection` header ("invalid connection header"), 500-ing
+  // every proxied call.
+  for (const key of HOP_BY_HOP) headers.delete(key);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   const init: RequestInit & { duplex?: "half" } = {
