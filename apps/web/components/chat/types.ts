@@ -12,6 +12,7 @@ export type ChatBlock =
   | { type: "kpi_overview" }
   | { type: "governance_summary" }
   | { type: "sim_progress" }
+  | { type: "next_steps" }
   | { type: "onboarding"; stepId: import("./onboarding/onboarding-steps").OnboardingStepId };
 
 export type ChatTurn = {

@@ -172,8 +172,11 @@ impl LlmGateway for OpenaiLlm {
 
     async fn answer(&self, question: &str, context: &str) -> anyhow::Result<String> {
         let system = "You are an agent backed by the team's shared cognitive memory. \
-            Answer using ONLY the provided context. Be concise and note which memory \
-            layer each claim came from.";
+            When the provided context covers the question, answer from it and reference only \
+            the memory-layer names that literally appear in the context. \
+            When the context does not cover the question, do NOT invent any citation or memory \
+            layer; give a brief general answer, prefix it with 'De façon générale : ', and note \
+            if you are unsure. Reply in the question's language. Be concise.";
         let user = format!("Context:\n{context}\n\nQuestion: {question}");
         match self.chat(system, &user, false).await {
             Ok(text) => Ok(text.trim().to_string()),

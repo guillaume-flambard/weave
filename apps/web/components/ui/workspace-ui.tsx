@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CSSProperties, ReactNode } from "react";
 import { Badge } from "./primitives";
 
-const LEVEL_LABEL: Record<string, string> = { personal: "Personal", team: "Team", project: "Project", organization: "Organization" };
+const LEVEL_LABEL: Record<string, string> = { personal: "Perso", team: "Équipe", project: "Projet", organization: "Organisation" };
 
 export function Panel({ title, icon, count, subtitle, actions, bodyStyle, children }:
   { title: string; icon?: ReactNode; count?: number; subtitle?: string; actions?: ReactNode; bodyStyle?: CSSProperties; children: ReactNode }) {
@@ -103,22 +103,38 @@ export function FlashBanner({ kind = "skill", emerge = false, children }:
 
 export function AnswerBlock({ answer, skillUsed, layers }:
   { answer: string; skillUsed?: string; layers: { level: string; facts: { author: string; content: string }[] }[] }) {
+  const grounded = layers.length > 0;
+  // Strip the "De façon générale :" marker the model prepends; the UI conveys grounding.
+  const text = answer.replace(/^\s*de\s+façon\s+g[ée]n[ée]rale\s*[:,]\s*/i, "");
+
+  const body = (
+    <div>
+      {skillUsed && grounded && (
+        <div className="mb-2">
+          <Link
+            href={`/competence?name=${encodeURIComponent(skillUsed)}`}
+            className="inline-flex items-center gap-1.5 no-underline text-[11.5px] text-accent-deep bg-accent-soft rounded-full px-[9px] py-0.5 transition-colors hover:bg-[color-mix(in_srgb,var(--accent-soft)_70%,white)]"
+            style={{ border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)" }}
+          >
+            compétence utilisée · <span className="font-mono">{skillUsed}</span>
+          </Link>
+        </div>
+      )}
+      {!grounded && (
+        <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-muted border border-line rounded-full px-[9px] py-0.5">
+          réponse générale · hors mémoire d'équipe
+        </div>
+      )}
+      <div className="text-[13.5px] text-ink leading-[1.6]">{text}</div>
+    </div>
+  );
+
+  // Ungrounded answers have no provenance to show — render full-width, no empty column.
+  if (!grounded) return body;
+
   return (
     <div className="grid gap-4 items-start grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-      <div>
-        {skillUsed && (
-          <div className="mb-2">
-            <Link
-              href={`/competence?name=${encodeURIComponent(skillUsed)}`}
-              className="inline-flex items-center gap-1.5 no-underline text-[11.5px] text-accent-deep bg-accent-soft rounded-full px-[9px] py-0.5 transition-colors hover:bg-[color-mix(in_srgb,var(--accent-soft)_70%,white)]"
-              style={{ border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)" }}
-            >
-              compétence utilisée · <span className="font-mono">{skillUsed}</span>
-            </Link>
-          </div>
-        )}
-        <div className="text-[13.5px] text-ink leading-[1.6]">{answer}</div>
-      </div>
+      {body}
       <div>
         <h4 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Provenance · couches mémoire</h4>
         <div className="flex flex-col gap-1.5">

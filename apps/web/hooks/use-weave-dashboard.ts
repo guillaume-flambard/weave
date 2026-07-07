@@ -20,6 +20,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
   const [scope, setScope] = useState<Scope>({});
 
   const [feed, setFeed] = useState<Feed[]>([]);
+  const feedSeqRef = useRef(0);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -155,6 +156,7 @@ export function useWeaveDashboard(notifySkillEmerged: () => void) {
     es.onerror = () => scheduleHealthCheck();
     es.onmessage = (e) => {
       const ev: Feed = JSON.parse(e.data);
+      ev._k = feedSeqRef.current++;
       setFeed((prev) => [ev, ...prev].slice(0, 70));
       const tr = tRef.current;
       if (ev.type === "event_ingested" && pendingActionRef.current === "simulate") {

@@ -9,8 +9,29 @@ import { intentLabel, parseChatInput } from "./chat-orchestrator";
 import { useOnboarding } from "./onboarding/onboarding-context";
 import type { ChatBlock, ChatTurn, ParsedIntent } from "./types";
 
+const CHAT_STORAGE_KEY = "weave.chat.turns";
+
 function newTurnId(): string {
   return crypto.randomUUID();
+}
+
+/** Human-readable label for the user bubble, so slash commands never surface as "/simulate". */
+function friendlyLabel(
+  intent: ParsedIntent,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  switch (intent.kind) {
+    case "ask": return intent.question;
+    case "simulate": return t("chat.chipSimulate");
+    case "sources": return t("chat.chipConnect");
+    case "agents": return t("chat.cmdAgents");
+    case "memory": return t("chat.cmdMemory");
+    case "overview": return t("chat.cmdOverview");
+    case "govern": return t("chat.cmdGovern");
+    case "scope": return `${t("chat.cmdScope")} · ${intent.team}`;
+    case "help": return t("chat.cmdHelp");
+    case "freeform": return intent.text;
+  }
 }
 
 export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
@@ -25,6 +46,7 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
   const streamingSim = useRef(false);
   const onboardingSeeded = useRef(false);
   const simulateDoneHandled = useRef(false);
+  const conversationRestored = useRef(false);
 
   const { dash, setSkillNotify } = useWeaveContext();
 
@@ -32,6 +54,51 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     setSkillNotify(onSkillEmerged);
     return () => setSkillNotify(() => {});
   }, [onSkillEmerged, setSkillNotify]);
+
+  // Persist the conversation per tab so leaving the chat (Réglages, a skill/agent
+  // page…) and coming back doesn't lose it. Restore once on mount, then mirror
+  // every change. sessionStorage (not local) keeps it scoped to the tab session.
+  useEffect(() => {
+    if (conversationRestored.current) return;
+    conversationRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem(CHAT_STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as ChatTurn[];
+        if (Array.isArray(saved) && saved.length > 0) setTurns(saved);
+      }
+    } catch {
+      /* ignore corrupt/unavailable storage */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!conversationRestored.current) return;
+    try {
+      sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(turns));
+    } catch {
+      /* ignore quota/unavailable storage */
+    }
+  }, [turns]);
+
+  // "Repartir de zéro" clears the memory; clear the conversation with it so the chat
+  // returns to a fresh welcome instead of showing turns about now-deleted data.
+  const resetSeen = useRef(false);
+  useEffect(() => {
+    if (dash.pendingAction === "reset") {
+      if (!resetSeen.current) {
+        resetSeen.current = true;
+        setTurns([]);
+        try {
+          sessionStorage.removeItem(CHAT_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
+    } else {
+      resetSeen.current = false;
+    }
+  }, [dash.pendingAction]);
 
   const appendTurn = useCallback((userText: string, blocks: ChatBlock[]) => {
     setTurns((prev) => [...prev, { id: newTurnId(), userText, blocks }]);
@@ -190,7 +257,9 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
 
     setInput("");
     const intent = parseChatInput(text);
-    await runIntent(intent, text);
+    // Echo a human label in the user bubble, never the raw "/simulate" etc.
+    const label = text.startsWith("/") ? friendlyLabel(intent, t) : text;
+    await runIntent(intent, label);
   }, [busy, input, onboarding.isActive, runIntent, setInput, appendBlocks, t]);
 
   const runChip = useCallback((cmd: string) => {
@@ -270,7 +339,10 @@ export function useWeaveChat(onSkillEmerged: () => void = () => {}) {
     if (onboarding.awaitingSimulate) return;
     if (dash.pendingAction !== "simulate" && streamingSim.current) {
       streamingSim.current = false;
-      appendBlocks([{ type: "system", content: t("chat.simulateDone"), kind: "success" }]);
+      appendBlocks([
+        { type: "system", content: t("chat.simulateDone"), kind: "success" },
+        { type: "next_steps" },
+      ]);
     }
   }, [dash.pendingAction, appendBlocks, onboarding.awaitingSimulate, t]);
 

@@ -72,55 +72,16 @@ async fn main() -> anyhow::Result<()> {
 
     // LLM gateway — multi-provider, pluggable. Default: Ollama (local, no key).
     // WEAVE_LLM_PROVIDER = ollama | claude | heuristic | auto | groq | grok | openai
+    // Ingestion (extraction, synthesis) provider.
     let provider = std::env::var("WEAVE_LLM_PROVIDER").unwrap_or_else(|_| "ollama".into());
-    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .filter(|k| !k.trim().is_empty());
-    let llm: Arc<dyn LlmGateway> = match provider.as_str() {
-        "claude" => match anthropic_key {
-            Some(key) => Arc::new(ClaudeLlm::new(key, llm_model())),
-            None => {
-                tracing::warn!("provider=claude but ANTHROPIC_API_KEY unset; using heuristic");
-                Arc::new(HeuristicLlm::new())
-            }
-        },
-        "heuristic" => Arc::new(HeuristicLlm::new()),
-        "auto" => match anthropic_key {
-            Some(key) => Arc::new(ClaudeLlm::new(key, llm_model())),
-            None => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
-        },
-        "groq" => match groq_api_key() {
-            Some(key) => Arc::new(OpenaiLlm::named(
-                groq_base_url(),
-                groq_model(),
-                key,
-                "groq",
-            )),
-            None => {
-                tracing::warn!("provider=groq but GROQ_API_KEY unset; using heuristic");
-                Arc::new(HeuristicLlm::new())
-            }
-        },
-        "grok" | "openai" => {
-            let openai_key = std::env::var("OPENAI_API_KEY")
-                .ok()
-                .filter(|k| !k.trim().is_empty());
-            match openai_key {
-                Some(key) => {
-                    let base_url = std::env::var("OPENAI_BASE_URL")
-                        .unwrap_or_else(|_| "https://api.openai.com/v1".into());
-                    let model = std::env::var("OPENAI_MODEL")
-                        .unwrap_or_else(|_| "gpt-4o-mini".into());
-                    Arc::new(OpenaiLlm::new(base_url, model, key))
-                }
-                None => {
-                    tracing::warn!("provider={provider} but OPENAI_API_KEY unset; using heuristic");
-                    Arc::new(HeuristicLlm::new())
-                }
-            }
-        }
-        _ => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
-    };
+    let llm: Arc<dyn LlmGateway> = build_llm(&provider);
+    // Answering provider — decoupled so ingestion can be fast/deterministic while
+    // answers stay conversational (e.g. extraction=heuristic, answers=groq). Defaults
+    // to the ingestion provider when WEAVE_ANSWER_PROVIDER is unset.
+    let answer_provider =
+        std::env::var("WEAVE_ANSWER_PROVIDER").unwrap_or_else(|_| provider.clone());
+    let answer_llm: Arc<dyn LlmGateway> = build_llm(&answer_provider);
+    tracing::info!(extraction = %provider, answering = %answer_provider, "LLM providers");
     // Embeddings — real semantic (Ollama nomic) by default, hash fallback.
     // WEAVE_EMBED_PROVIDER = ollama | hash  (groq: use hash — no Groq embeddings wired)
     let embedder: Arc<dyn EmbeddingGateway> =
@@ -135,7 +96,8 @@ async fn main() -> anyhow::Result<()> {
             _ => Arc::new(OllamaEmbedder::new(ollama_url(), embed_model())),
         };
 
-    let runtime = Arc::new(Runtime::new(dyn_store, llm, embedder, threshold));
+    let runtime =
+        Arc::new(Runtime::new(dyn_store, llm, embedder, threshold).with_answer_llm(answer_llm));
     tracing::info!("LLM gateway: {}", runtime.llm_name());
     runtime.seed_predefined_agents(DEFAULT_PROJECT).await?;
 
@@ -226,6 +188,54 @@ fn cors_layer() -> CorsLayer {
         .allow_origin(AllowOrigin::list(origins))
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers(Any)
+}
+
+/// Build an LLM gateway for a provider name. Used for both the ingestion provider
+/// (WEAVE_LLM_PROVIDER) and the answering provider (WEAVE_ANSWER_PROVIDER).
+fn build_llm(provider: &str) -> Arc<dyn LlmGateway> {
+    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty());
+    match provider {
+        "claude" => match anthropic_key {
+            Some(key) => Arc::new(ClaudeLlm::new(key, llm_model())),
+            None => {
+                tracing::warn!("provider=claude but ANTHROPIC_API_KEY unset; using heuristic");
+                Arc::new(HeuristicLlm::new())
+            }
+        },
+        "heuristic" => Arc::new(HeuristicLlm::new()),
+        "auto" => match anthropic_key {
+            Some(key) => Arc::new(ClaudeLlm::new(key, llm_model())),
+            None => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
+        },
+        "groq" => match groq_api_key() {
+            Some(key) => Arc::new(OpenaiLlm::named(groq_base_url(), groq_model(), key, "groq")),
+            None => {
+                tracing::warn!("provider=groq but GROQ_API_KEY unset; using heuristic");
+                Arc::new(HeuristicLlm::new())
+            }
+        },
+        "grok" | "openai" => {
+            let openai_key = std::env::var("OPENAI_API_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty());
+            match openai_key {
+                Some(key) => {
+                    let base_url = std::env::var("OPENAI_BASE_URL")
+                        .unwrap_or_else(|_| "https://api.openai.com/v1".into());
+                    let model = std::env::var("OPENAI_MODEL")
+                        .unwrap_or_else(|_| "gpt-4o-mini".into());
+                    Arc::new(OpenaiLlm::new(base_url, model, key))
+                }
+                None => {
+                    tracing::warn!("provider={provider} but OPENAI_API_KEY unset; using heuristic");
+                    Arc::new(HeuristicLlm::new())
+                }
+            }
+        }
+        _ => Arc::new(OllamaLlm::new(ollama_url(), ollama_model())),
+    }
 }
 
 fn llm_model() -> String {

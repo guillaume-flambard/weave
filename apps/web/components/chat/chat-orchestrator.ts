@@ -10,6 +10,9 @@ export type SlashCommandDef = {
   descKey: string;
   /** Text inserted when the command is picked */
   template: string;
+  /** Hidden from the slash menu (still parseable if typed). Keeps the demo path
+   * to a few obvious actions; admin/dashboard commands stay reachable but unadvertised. */
+  hidden?: boolean;
 };
 
 export const SLASH_COMMANDS: SlashCommandDef[] = [
@@ -17,10 +20,10 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { id: "simulate", prefix: "simulate", aliases: ["ingest"], labelKey: "chat.cmdSimulate", descKey: "chat.cmdSimulateDesc", template: "/simulate" },
   { id: "ask", prefix: "ask", aliases: [], labelKey: "chat.cmdAsk", descKey: "chat.cmdAskDesc", template: "/ask " },
   { id: "agents", prefix: "agents", aliases: [], labelKey: "chat.cmdAgents", descKey: "chat.cmdAgentsDesc", template: "/agents" },
-  { id: "memory", prefix: "memory", aliases: [], labelKey: "chat.cmdMemory", descKey: "chat.cmdMemoryDesc", template: "/memory" },
-  { id: "overview", prefix: "overview", aliases: [], labelKey: "chat.cmdOverview", descKey: "chat.cmdOverviewDesc", template: "/overview" },
-  { id: "govern", prefix: "govern", aliases: ["governance"], labelKey: "chat.cmdGovern", descKey: "chat.cmdGovernDesc", template: "/govern" },
-  { id: "scope", prefix: "scope", aliases: [], labelKey: "chat.cmdScope", descKey: "chat.cmdScopeDesc", template: "/scope " },
+  { id: "memory", prefix: "memory", aliases: [], labelKey: "chat.cmdMemory", descKey: "chat.cmdMemoryDesc", template: "/memory", hidden: true },
+  { id: "overview", prefix: "overview", aliases: [], labelKey: "chat.cmdOverview", descKey: "chat.cmdOverviewDesc", template: "/overview", hidden: true },
+  { id: "govern", prefix: "govern", aliases: ["governance"], labelKey: "chat.cmdGovern", descKey: "chat.cmdGovernDesc", template: "/govern", hidden: true },
+  { id: "scope", prefix: "scope", aliases: [], labelKey: "chat.cmdScope", descKey: "chat.cmdScopeDesc", template: "/scope ", hidden: true },
   { id: "help", prefix: "help", aliases: [], labelKey: "chat.cmdHelp", descKey: "chat.cmdHelpDesc", template: "/help" },
 ];
 
@@ -29,8 +32,9 @@ export function filterSlashCommands(input: string): SlashCommandDef[] {
   if (!input.startsWith("/")) return [];
   if (/\s/.test(input.slice(1))) return [];
   const query = input.slice(1).toLowerCase();
-  if (!query) return SLASH_COMMANDS;
-  return SLASH_COMMANDS.filter((c) => {
+  const pool = SLASH_COMMANDS.filter((c) => !c.hidden);
+  if (!query) return pool;
+  return pool.filter((c) => {
     if (c.prefix.startsWith(query)) return true;
     return c.aliases.some((a) => a.startsWith(query));
   });

@@ -103,8 +103,11 @@ export function WeaveSidebar({
       <div className="p-3 border-t border-line-soft shrink-0 flex flex-col gap-2.5">
         <LocaleSwitcher />
         <div className="flex items-center gap-2 text-[11px] text-muted">
-          <StatusIndicator connected={connected} />
-          <span>{connected ? t("status.live") : t("status.offline")}</span>
+          <StatusIndicator
+            connected={connected}
+            labelConnected={t("status.live")}
+            labelOffline={t("status.offline")}
+          />
           {llm && <span className="ml-auto truncate max-w-[100px] font-mono text-[10px]">{llm}</span>}
         </div>
         <div className="flex items-center gap-2">

@@ -1,4 +1,7 @@
 export type Feed = {
+  /** Client-side stable key stamped at ingestion, so streamed rows don't re-mount
+   *  (and re-fire their entrance animation) when the newest-first list shifts. */
+  _k?: number;
   type: string;
   source?: string;
   actor?: string;

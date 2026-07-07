@@ -405,11 +405,60 @@ function SimProgressBlock({ dash }: { dash: WeaveChat["dash"] }) {
             {t("workspace.ingestion.traceTitle")}
           </div>
           {trace.map((ev, i) => (
-            <div key={`${ev.type}-${i}`} className="wv-chat-feed-in">
+            <div key={ev._k ?? `${ev.type}-${i}`} className="wv-chat-feed-in">
               <ApiFeedRow ev={ev} showPipelineStep />
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function NextStepsBlock({ chat }: { chat: WeaveChat }) {
+  const t = useT();
+  // Suggestions are drawn from the skills that ACTUALLY emerged (their trigger
+  // phrasing routes straight to that skill), so a suggested question can never
+  // land on "no memory". Fall back to a known-seeded question only if empty.
+  const emerged = Array.from(
+    new Map(
+      chat.dash.skills
+        .map((s) => s.trigger?.trim())
+        .filter((q): q is string => !!q)
+        .map((q) => [q.toLowerCase(), q]),
+    ).values(),
+  );
+  const questions = emerged.slice(0, 3);
+  const pending = chat.dash.skills.length;
+  return (
+    <div className="wv-chat-block flex flex-col gap-3" data-testid="next-steps">
+      <div>
+        <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <Sparkles size={15} className="text-accent" />
+          {t("chat.nextTitle")}
+        </div>
+        <p className="mt-1 mb-0 text-[13px] text-ink-soft leading-relaxed">
+          {t("chat.nextHint")}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {questions.map((q) => (
+          <button
+            key={q}
+            type="button"
+            disabled={chat.busy}
+            onClick={() => chat.runChip(`/ask ${q}`)}
+            className="group flex items-center gap-2 text-left rounded-lg border border-line bg-surface px-3 py-2 text-[13.5px] text-ink hover:border-accent/50 hover:bg-accent-soft/40 cursor-pointer font-sans disabled:opacity-50"
+          >
+            <MessageCircle size={14} className="text-muted group-hover:text-accent shrink-0" />
+            <span className="flex-1">{q}</span>
+          </button>
+        ))}
+      </div>
+      {pending > 0 && (
+        <Link href="/competence" className="text-[13px] font-medium text-accent-deep no-underline hover:text-accent">
+          {t("chat.nextSkillsLink", { count: pending })} →
+        </Link>
       )}
     </div>
   );
@@ -440,6 +489,7 @@ export function ChatBlockView({ block, chat }: { block: ChatBlock; chat: WeaveCh
   if (block.type === "kpi_overview") return <KpiOverviewBlock dash={dash} />;
   if (block.type === "governance_summary") return <GovernanceSummaryBlock dash={dash} />;
   if (block.type === "sim_progress") return <SimProgressBlock dash={dash} />;
+  if (block.type === "next_steps") return <NextStepsBlock chat={chat} />;
 
   if (block.type === "answer") {
     return (
@@ -460,7 +510,7 @@ export function ChatBlockView({ block, chat }: { block: ChatBlock; chat: WeaveCh
         {items.length === 0 ? (
           <p className="m-0 text-xs text-muted">{t("chat.emptyFeed")}</p>
         ) : items.map((ev, i) => (
-          <div key={`${ev.type}-${i}`}><ApiFeedRow ev={ev} /></div>
+          <div key={ev._k ?? `${ev.type}-${i}`}><ApiFeedRow ev={ev} /></div>
         ))}
       </div>
     );
