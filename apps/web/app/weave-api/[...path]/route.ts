@@ -34,6 +34,14 @@ async function proxy(req: NextRequest, path: string[]) {
   // forwarded `connection` header ("invalid connection header"), 500-ing
   // every proxied call.
   for (const key of HOP_BY_HOP) headers.delete(key);
+  // EventSource (the /events SSE stream) can't set headers, so it can't send
+  // the Bearer token that every other call carries. Inject it here, server-side,
+  // instead of passing ?api_key= on the URL — that kept the key out of nginx
+  // access logs. Regular fetches already carry their own header; don't override.
+  if (!headers.has("authorization")) {
+    const apiKey = process.env.NEXT_PUBLIC_WEAVE_API_KEY;
+    if (apiKey) headers.set("authorization", `Bearer ${apiKey}`);
+  }
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   const init: RequestInit & { duplex?: "half" } = {
