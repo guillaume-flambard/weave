@@ -30,3 +30,8 @@ apps/web/playwright-report/
 
 # Local tooling databases
 sqlite_mcp_server.db
+.gstack/
+
+# Generated media (Remotion)
+tools/video/out/
+tools/video/public/*.png
