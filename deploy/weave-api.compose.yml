@@ -1,0 +1,30 @@
+# weave-api — autonomous, code-managed deployment (no Coolify control plane).
+#
+# The weave-web frontend and weave-postgres (pgvector) run on the shared Docker
+# network `coolify`. The frontend proxies /weave-api/* to http://weave-api:8787,
+# so the API only needs to run on that network with the stable name/alias
+# `weave-api` and reach Postgres by its `weave-postgres` alias.
+#
+# Managed on the host by systemd (deploy/weave-api.service) and redeployed with
+# deploy/redeploy.sh over SSH. Secrets live in /opt/weave/.weave-api.env
+# (chmod 600, never committed) — see .env.example for the keys.
+services:
+  weave-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    container_name: weave-api
+    restart: unless-stopped
+    env_file:
+      - ../.weave-api.env
+    expose:
+      - "8787"
+    networks:
+      coolify:
+        aliases:
+          - weave-api
+
+networks:
+  coolify:
+    external: true
+    name: coolify
