@@ -1,0 +1,47 @@
+# Coolify "Docker Compose" resource for the weave-api service only.
+#
+# Context: the weave-web frontend and the weave-postgres (pgvector) database
+# are already separate Coolify resources in the memo-labs / production project.
+# The frontend proxies /weave-api/* to http://weave-api:8787, so the API just
+# needs to run on the shared `coolify` network with the stable alias `weave-api`
+# and reach the existing Postgres by its Coolify alias `weave-postgres`.
+#
+# This file deploys ONLY the API, leaving the working frontend and database
+# untouched. Coolify builds it from Dockerfile.api and manages its lifecycle.
+#
+# Env set in Coolify (Environment Variables), not committed:
+#   WEAVE_ENC_KEY          required, `openssl rand -base64 32` (keep it stable)
+#   WEAVE_LLM_PROVIDER     heuristic (default) | groq | ollama | claude
+#   GROQ_API_KEY           only if provider=groq
+#
+services:
+  weave-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://weave:weave@weave-postgres:5432/weave
+      WEAVE_API_ADDR: 0.0.0.0:8787
+      WEAVE_ENC_KEY: ${WEAVE_ENC_KEY}
+      WEAVE_LLM_PROVIDER: ${WEAVE_LLM_PROVIDER:-heuristic}
+      WEAVE_EMBED_PROVIDER: ${WEAVE_EMBED_PROVIDER:-hash}
+      WEAVE_WEB_URL: https://weave.memolabs.dev
+      WEAVE_CORS_ORIGIN: https://weave.memolabs.dev
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+    expose:
+      - "8787"
+    # No healthcheck: the debian-slim runtime ships neither curl nor wget, so a
+    # command-based check would mark the container unhealthy despite a live API.
+    # Liveness is confirmed via GET /weave-api/health through the frontend proxy.
+    networks:
+      coolify:
+        aliases:
+          - weave-api
+
+networks:
+  coolify:
+    external: true
+    name: coolify
