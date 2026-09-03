@@ -10,7 +10,13 @@ name: build weave-api
 on:
   push:
     branches: [main]
-  workflow_dispatch: {}
+    paths:
+      - Dockerfile.api
+      - Cargo.toml
+      - Cargo.lock
+      - crates/**
+      - migrations/**
+      - .github/workflows/build-weave-api.yml  workflow_dispatch: {}
 
 concurrency:
   # le nom du workflow porte l'app (le depot weave en heberge deux, api et web) :
