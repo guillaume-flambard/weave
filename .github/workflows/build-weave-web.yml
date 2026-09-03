@@ -40,12 +40,18 @@ jobs:
         run: |
           nixpacks build apps/web \
             --name ghcr.io/guillaume-flambard/weave-web:${{ github.sha }} \
-            --tag ghcr.io/guillaume-flambard/weave-web:latest \
             --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
             --env NIXPACKS_NODE_VERSION=22 \
             -i 'pnpm install' -b 'pnpm build' -s 'pnpm start'
 
-      - name: Pousser
+      - name: Pousser le sha
+        run: docker push ghcr.io/guillaume-flambard/weave-web:${{ github.sha }}
+
+      # :latest UNIQUEMENT depuis main : sinon un workflow_dispatch lance depuis
+      # une branche de travail publierait l'image que l'agent deploie en 2 minutes.
+      - name: Pousser latest (main seulement)
+        if: github.ref == 'refs/heads/main'
         run: |
-          docker push ghcr.io/guillaume-flambard/weave-web:${{ github.sha }}
+          docker tag ghcr.io/guillaume-flambard/weave-web:${{ github.sha }} ghcr.io/guillaume-flambard/weave-web:latest
           docker push ghcr.io/guillaume-flambard/weave-web:latest
