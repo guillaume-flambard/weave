@@ -1,0 +1,49 @@
+# Construit l'image avec nixpacks, exactement comme le faisait Coolify (memes
+# commandes install/build/start, meme version de Node), et la pousse sur GHCR.
+# Le VPS la tire ensuite tout seul ; ce workflow ne pretend pas avoir deploye.
+#
+# Genere depuis lab-infra/ci/build-nixpacks.yml — ne pas editer a la main,
+# relancer ./scripts/install-ci.sh <app>.
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Installer nixpacks
+        run: curl -sSL https://nixpacks.com/install.sh | bash
+
+      - name: Construire
+        run: |
+          nixpacks build apps/web \
+            --name ghcr.io/guillaume-flambard/weave-web:${{ github.sha }} \
+            --tag ghcr.io/guillaume-flambard/weave-web:latest \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --env NIXPACKS_NODE_VERSION=22 \
+            -i 'pnpm install' -b 'pnpm build' -s 'pnpm start'
+
+      - name: Pousser
+        run: |
+          docker push ghcr.io/guillaume-flambard/weave-web:${{ github.sha }}
+          docker push ghcr.io/guillaume-flambard/weave-web:latest
