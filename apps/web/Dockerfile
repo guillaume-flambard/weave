@@ -2,7 +2,7 @@
 # Pinned to an exact patch: the proxy uses Node's global fetch (built-in undici), whose
 # version tracks the Node image. A floating `22` tag silently bumped undici on rebuild and
 # started rejecting the forwarded `connection` header (500s). Bump deliberately, not by drift.
-FROM node:22.23.1-bookworm-slim
+FROM node:24-bookworm-slim
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
